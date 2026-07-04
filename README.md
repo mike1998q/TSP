@@ -3,8 +3,9 @@
 A PyTorch project for multivariate time series forecasting that processes the
 look-back window through **two parallel branches** and fuses them:
 
-- **Time-domain branch** — series decomposition (trend/seasonal) + a temporal
-  MLP. Captures local, trend, and non-periodic structure.
+- **Time-domain branch** — series decomposition (trend/seasonal) + a **Mamba**
+  (selective state-space) encoder over the time axis. Captures local, trend,
+  and long-range temporal dynamics with linear-time sequence modeling.
 - **Frequency-domain branch** — real FFT + a learnable complex spectral filter.
   Captures global, periodic structure with a full-window receptive field at
   `O(L log L)` cost.
@@ -17,7 +18,7 @@ mapped to the forecast horizon by a linear head. Instance normalization
              input window (B, L, C)
                  /            \
         TimeBranch          FreqBranch
-      (decomp + MLP)     (rFFT + spectral filter)
+   (decomp + Mamba SSM)  (rFFT + spectral filter)
          (B,C,D)             (B,C,D)
                  \            /
                 FeatureFusion (gated)
@@ -113,7 +114,8 @@ TSP/
 ├── src/
 │   ├── data/                   # sliding-window dataset + loaders + scaler
 │   ├── models/
-│   │   ├── time_branch.py      # decomposition + temporal MLP
+│   │   ├── mamba_block.py      # pure-torch Mamba SSM (+ optional fast kernels)
+│   │   ├── time_branch.py      # decomposition + Mamba encoder (or MLP)
 │   │   ├── freq_branch.py      # rFFT + complex spectral filter
 │   │   ├── fusion.py           # gated / sum / concat fusion
 │   │   └── dual_domain_model.py# full model + RevIN normalization
@@ -131,11 +133,43 @@ TSP/
 |-------|---------|
 | `data.seq_len` / `data.pred_len` | look-back / horizon lengths |
 | `model.d_model` | shared hidden width of both branches |
+| `model.time_encoder` | `mamba` (default) or `mlp` for the time branch |
+| `model.mamba_layers` | number of stacked Mamba blocks |
+| `model.mamba_d_state` | SSM state dimension `N` |
+| `model.mamba_expand` | inner expansion factor (`d_inner = expand * d_model`) |
 | `model.time_kernel_size` | moving-average window for trend extraction |
 | `model.freq_sparsity` | fraction of high frequencies to drop (low-pass) |
 | `model.fusion` | `gated`, `sum`, or `concat` |
 | `train.amp` | mixed precision (recommended on RTX 5090) |
 | `train.compile` | `torch.compile` (enable once your build supports sm_120) |
+
+## Mamba encoder (time branch)
+
+The time-domain branch uses a **Mamba** selective state-space encoder
+(`src/models/mamba_block.py`). It ships as a **self-contained pure-PyTorch
+implementation** (selective scan + causal depthwise conv), so it trains on any
+CPU or GPU with no custom kernels.
+
+If the official `mamba-ssm` package is installed, `MambaLayer` **automatically**
+uses its fused CUDA kernels instead — no code change needed:
+
+```bash
+# Optional speed-up (only if your toolchain can build them):
+pip install causal-conv1d>=1.4.0
+pip install mamba-ssm>=2.2.0
+```
+
+> On brand-new stacks like RTX 5090 / Blackwell (sm_120) + CUDA 13.0, the
+> official kernels can be hard to build. The pure-PyTorch path lets you train
+> immediately; add the fast kernels later and the model picks them up on its
+> own. The pure selective scan is a sequential `O(L)` loop — fine on GPU, but
+> slow on CPU for long windows, so prefer CUDA (or shorter `seq_len`) there.
+
+Switch back to the plain MLP encoder any time:
+
+```bash
+python -m src.train --time_encoder mlp
+```
 
 ## Metrics
 

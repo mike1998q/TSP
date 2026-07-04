@@ -5,7 +5,7 @@ Architecture
              input window (B, L, C)
                  /            \\
         TimeBranch          FreqBranch
-      (decomp + MLP)     (rFFT + spectral filter)
+    (decomp + Mamba SSM)  (rFFT + spectral filter)
          (B,C,D)             (B,C,D)
                  \\            /
                 FeatureFusion (gated)
@@ -37,6 +37,12 @@ class DualDomainForecaster(nn.Module):
         d_model: int = 128,
         time_kernel_size: int = 25,
         time_dropout: float = 0.1,
+        time_encoder: str = "mamba",
+        mamba_layers: int = 2,
+        mamba_d_state: int = 16,
+        mamba_d_conv: int = 4,
+        mamba_expand: int = 2,
+        use_official_mamba: bool = True,
         freq_hidden: int = 128,
         freq_dropout: float = 0.1,
         freq_sparsity: float = 0.0,
@@ -53,6 +59,12 @@ class DualDomainForecaster(nn.Module):
             d_model=d_model,
             kernel_size=time_kernel_size,
             dropout=time_dropout,
+            encoder=time_encoder,
+            mamba_layers=mamba_layers,
+            mamba_d_state=mamba_d_state,
+            mamba_d_conv=mamba_d_conv,
+            mamba_expand=mamba_expand,
+            use_official_mamba=use_official_mamba,
         )
         self.freq_branch = FreqBranch(
             seq_len=seq_len,
@@ -103,6 +115,12 @@ def build_model(cfg: dict, n_channels: int) -> DualDomainForecaster:
         d_model=mcfg["d_model"],
         time_kernel_size=mcfg["time_kernel_size"],
         time_dropout=mcfg["time_dropout"],
+        time_encoder=mcfg.get("time_encoder", "mamba"),
+        mamba_layers=mcfg.get("mamba_layers", 2),
+        mamba_d_state=mcfg.get("mamba_d_state", 16),
+        mamba_d_conv=mcfg.get("mamba_d_conv", 4),
+        mamba_expand=mcfg.get("mamba_expand", 2),
+        use_official_mamba=mcfg.get("use_official_mamba", True),
         freq_hidden=mcfg["freq_hidden"],
         freq_dropout=mcfg["freq_dropout"],
         freq_sparsity=mcfg.get("freq_sparsity", 0.0),

@@ -11,15 +11,45 @@ from src.data.dataset import (
 )
 from src.models import DualDomainForecaster
 from src.models.freq_branch import FreqBranch
+from src.models.mamba_block import MambaEncoder, MambaSSM
 from src.models.time_branch import TimeBranch
+
+
+def test_mamba_ssm_shape():
+    b, l, d = 3, 40, 24
+    x = torch.randn(b, l, d)
+    ssm = MambaSSM(d_model=d, d_state=8)
+    out = ssm(x)
+    assert out.shape == (b, l, d)
+
+
+def test_mamba_encoder_causal():
+    """A causal SSM: changing a future timestep must not alter earlier outputs."""
+    torch.manual_seed(0)
+    enc = MambaEncoder(d_model=16, n_layers=2, d_state=8, use_official=False).eval()
+    x = torch.randn(1, 20, 16)
+    with torch.no_grad():
+        y1 = enc(x)
+        x2 = x.clone()
+        x2[:, -1] += 5.0  # perturb only the last timestep
+        y2 = enc(x2)
+    # Outputs before the perturbed step must be unchanged.
+    assert torch.allclose(y1[:, :-1], y2[:, :-1], atol=1e-5)
 
 
 def test_time_branch_shape():
     b, l, c, d = 4, 96, 7, 32
     x = torch.randn(b, l, c)
-    branch = TimeBranch(seq_len=l, d_model=d)
+    branch = TimeBranch(seq_len=l, d_model=d, use_official_mamba=False)
     out = branch(x)
     assert out.shape == (b, c, d)
+
+
+def test_time_branch_mlp_encoder():
+    b, l, c, d = 4, 96, 7, 32
+    x = torch.randn(b, l, c)
+    branch = TimeBranch(seq_len=l, d_model=d, encoder="mlp")
+    assert branch(x).shape == (b, c, d)
 
 
 def test_freq_branch_shape():
