@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# Data & artifacts
+data/*.csv
+checkpoints/*.pt
+checkpoints/*.json
+*.png
+!docs/**/*.png
+
+# Notebooks / IDE
+.ipynb_checkpoints/
+.idea/
+.vscode/
+.DS_Store
+
+# PyTorch / CUDA caches
+*.pth
+.torch_compile_cache/

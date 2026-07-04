@@ -1,0 +1,151 @@
+"""Sliding-window datasets for multivariate time series forecasting."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Optional, Tuple
+
+import numpy as np
+import pandas as pd
+import torch
+from torch.utils.data import Dataset
+
+
+@dataclass
+class Scaler:
+    """Standardize channels using statistics fitted on the training split."""
+
+    mean: np.ndarray
+    std: np.ndarray
+
+    @classmethod
+    def fit(cls, x: np.ndarray) -> "Scaler":
+        mean = x.mean(axis=0, keepdims=True)
+        std = x.std(axis=0, keepdims=True)
+        std = np.where(std < 1e-8, 1.0, std)
+        return cls(mean=mean, std=std)
+
+    def transform(self, x: np.ndarray) -> np.ndarray:
+        return (x - self.mean) / self.std
+
+    def inverse_transform(self, x: np.ndarray) -> np.ndarray:
+        return x * self.std + self.mean
+
+
+def generate_synthetic(length: int, channels: int, seed: int = 0) -> np.ndarray:
+    """Create a multi-seasonal synthetic signal with trend and noise.
+
+    Each channel mixes several sinusoids (so the frequency branch has real
+    structure to exploit), a slow trend (for the time branch), and Gaussian
+    noise. Returns an array of shape (length, channels).
+    """
+    rng = np.random.default_rng(seed)
+    t = np.arange(length)
+    series = np.zeros((length, channels), dtype=np.float32)
+    for c in range(channels):
+        n_components = rng.integers(2, 5)
+        signal = np.zeros(length, dtype=np.float64)
+        for _ in range(n_components):
+            period = rng.uniform(12, 336)
+            amp = rng.uniform(0.5, 2.0)
+            phase = rng.uniform(0, 2 * np.pi)
+            signal += amp * np.sin(2 * np.pi * t / period + phase)
+        trend = rng.uniform(-1e-3, 1e-3) * t
+        noise = rng.normal(0, 0.3, size=length)
+        series[:, c] = (signal + trend + noise).astype(np.float32)
+    return series
+
+
+class SlidingWindowDataset(Dataset):
+    """Yields (input_window, target_window) pairs from a contiguous series.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        Array of shape (time, channels) already scaled if desired.
+    seq_len : int
+        Length of the look-back input window.
+    pred_len : int
+        Forecast horizon length.
+    """
+
+    def __init__(self, data: np.ndarray, seq_len: int, pred_len: int):
+        if data.ndim != 2:
+            raise ValueError(f"data must be 2D (time, channels), got {data.shape}")
+        self.data = np.ascontiguousarray(data, dtype=np.float32)
+        self.seq_len = seq_len
+        self.pred_len = pred_len
+        n = len(self.data) - seq_len - pred_len + 1
+        if n <= 0:
+            raise ValueError(
+                f"Series too short ({len(self.data)}) for seq_len={seq_len} + "
+                f"pred_len={pred_len}."
+            )
+        self.n_samples = n
+
+    def __len__(self) -> int:
+        return self.n_samples
+
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        s = idx
+        e = idx + self.seq_len
+        x = self.data[s:e]
+        y = self.data[e : e + self.pred_len]
+        return torch.from_numpy(x), torch.from_numpy(y)
+
+
+def load_raw_series(
+    source: str,
+    csv_path: Optional[str],
+    target_columns: Optional[list],
+    synthetic_length: int,
+    synthetic_channels: int,
+    seed: int,
+) -> np.ndarray:
+    """Load the full (time, channels) array from synthetic or CSV source."""
+    if source == "synthetic":
+        return generate_synthetic(synthetic_length, synthetic_channels, seed=seed)
+    if source == "csv":
+        if not csv_path:
+            raise ValueError("data.csv_path must be set when source == 'csv'.")
+        df = pd.read_csv(csv_path)
+        # Drop a leading timestamp/date column if present.
+        first = df.columns[0]
+        if df[first].dtype == object or "date" in first.lower() or "time" in first.lower():
+            df = df.drop(columns=[first])
+        if target_columns:
+            df = df[target_columns]
+        df = df.select_dtypes(include=[np.number])
+        return df.to_numpy(dtype=np.float32)
+    raise ValueError(f"Unknown data source: {source!r}")
+
+
+def build_splits(
+    data: np.ndarray,
+    seq_len: int,
+    pred_len: int,
+    train_ratio: float,
+    val_ratio: float,
+    scale: bool,
+) -> Tuple[SlidingWindowDataset, SlidingWindowDataset, SlidingWindowDataset, Scaler]:
+    """Chronologically split, scale (train-fit), and window the series.
+
+    Validation and test windows are extended backwards by `seq_len` so that
+    their first prediction target still has a full look-back window, without
+    leaking future data across the split boundary's targets.
+    """
+    n = len(data)
+    n_train = int(n * train_ratio)
+    n_val = int(n * val_ratio)
+
+    train_raw = data[:n_train]
+    scaler = Scaler.fit(train_raw)
+    proc = scaler.transform(data) if scale else data
+
+    train_slice = proc[:n_train]
+    val_slice = proc[n_train - seq_len : n_train + n_val]
+    test_slice = proc[n_train + n_val - seq_len :]
+
+    train_ds = SlidingWindowDataset(train_slice, seq_len, pred_len)
+    val_ds = SlidingWindowDataset(val_slice, seq_len, pred_len)
+    test_ds = SlidingWindowDataset(test_slice, seq_len, pred_len)
+    return train_ds, val_ds, test_ds, scaler
