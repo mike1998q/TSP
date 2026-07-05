@@ -107,11 +107,20 @@ def load_raw_series(
     if source == "csv":
         if not csv_path:
             raise ValueError("data.csv_path must be set when source == 'csv'.")
-        df = pd.read_csv(csv_path)
-        # Drop a leading timestamp/date column if present.
-        first = df.columns[0]
-        if df[first].dtype == object or "date" in first.lower() or "time" in first.lower():
-            df = df.drop(columns=[first])
+        if csv_path.endswith((".txt", ".txt.gz")):
+            # LSTNet-style matrix (e.g. Solar-Energy's solar_AL.txt):
+            # headerless, comma-separated, no timestamp column.
+            df = pd.read_csv(csv_path, header=None)
+        else:
+            df = pd.read_csv(csv_path)
+            # Drop a leading timestamp/date column if present.
+            first = df.columns[0]
+            if (
+                df[first].dtype == object
+                or "date" in str(first).lower()
+                or "time" in str(first).lower()
+            ):
+                df = df.drop(columns=[first])
         if target_columns:
             df = df[target_columns]
         df = df.select_dtypes(include=[np.number])

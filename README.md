@@ -81,6 +81,52 @@ python -m src.train --seq_len 192 --pred_len 96 --epochs 50 --batch_size 64 --de
 python -m src.evaluate --checkpoint checkpoints/dual_domain_default_best.pt --plot forecast.png
 ```
 
+## Benchmark datasets
+
+Per-dataset configs with tuned hyperparameters ship in `configs/` for the
+standard long-term forecasting benchmarks:
+
+| Dataset | Config | Channels | Freq | Rows | Split | Batch | LR | Notes |
+|---|---|---|---|---|---|---|---|---|
+| ETTh1 | `configs/ETTh1.yaml` | 7 | 1 h | 17,420 | 0.6/0.2/0.2 | 32 | 2e-4 | dropout 0.2 |
+| ETTh2 | `configs/ETTh2.yaml` | 7 | 1 h | 17,420 | 0.6/0.2/0.2 | 32 | 1e-4 | 1 Mamba layer, dropout 0.3, low-pass 0.3 |
+| ETTm1 | `configs/ETTm1.yaml` | 7 | 15 min | 69,680 | 0.6/0.2/0.2 | 32 | 1e-4 | 10 epochs |
+| ETTm2 | `configs/ETTm2.yaml` | 7 | 15 min | 69,680 | 0.6/0.2/0.2 | 32 | 1e-4 | dropout 0.2, low-pass 0.2 |
+| Weather | `configs/weather.yaml` | 21 | 10 min | 52,696 | 0.7/0.1/0.2 | 32 | 1e-4 | |
+| Electricity | `configs/electricity.yaml` | 321 | 1 h | 26,304 | 0.7/0.1/0.2 | 16 | 5e-4 | |
+| Solar-Energy | `configs/solar.yaml` | 137 | 10 min | 52,560 | 0.7/0.1/0.2 | 16 | 5e-4 | reads `solar_AL.txt` directly |
+| Exchange-Rate | `configs/exchange_rate.yaml` | 8 | 1 day | 7,588 | 0.7/0.1/0.2 | 32 | 1e-4 | d_model 64, dropout 0.3, low-pass 0.5 |
+| Traffic | `configs/traffic.yaml` | 862 | 1 h | 17,544 | 0.7/0.1/0.2 | 8 | 1e-3 | halve batch on OOM |
+
+All use `seq_len: 96`, `pred_len: 96` by default; the standard horizons
+{96, 192, 336, 720} are a CLI override away. Batch sizes are sized for a
+32 GB RTX 5090 given the channel-independent folding (effective sequences per
+step = `batch_size × channels`).
+
+**Getting the data:** all nine files are in the standard benchmark bundle used
+by Autoformer / TimesNet / iTransformer — see the "datasets" download link in
+the [Time-Series-Library](https://github.com/thuml/Time-Series-Library) README
+(Google Drive). Place the files in `data/`:
+
+```
+data/ETTh1.csv  data/ETTh2.csv  data/ETTm1.csv  data/ETTm2.csv
+data/weather.csv  data/electricity.csv  data/traffic.csv
+data/exchange_rate.csv  data/solar_AL.txt
+```
+
+Run a single benchmark, or sweep everything:
+
+```bash
+python -m src.train --config configs/ETTh1.yaml                # H=96
+python -m src.train --config configs/ETTh1.yaml --pred_len 336 # other horizon
+
+./scripts/run_benchmarks.sh                    # all datasets x {96,192,336,720}
+./scripts/run_benchmarks.sh ETTh1 weather      # subset
+./scripts/run_benchmarks.sh solar --freq_encoder mamba  # forward extra flags
+```
+
+Results land in `checkpoints/<name>_results.json` (MSE/MAE per run).
+
 ## Using your own data
 
 Set the data source to `csv` and point at a wide CSV whose first column is a
