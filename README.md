@@ -6,9 +6,10 @@ look-back window through **two parallel branches** and fuses them:
 - **Time-domain branch** — series decomposition (trend/seasonal) + a **Mamba**
   (selective state-space) encoder over the time axis. Captures local, trend,
   and long-range temporal dynamics with linear-time sequence modeling.
-- **Frequency-domain branch** — real FFT + a learnable complex spectral filter.
-  Captures global, periodic structure with a full-window receptive field at
-  `O(L log L)` cost.
+- **Frequency-domain branch** — real FFT + a spectral encoder: either a
+  learnable complex linear filter (default) or a **bidirectional Mamba**
+  scanned over the frequency bins. Captures global, periodic structure with a
+  full-window receptive field.
 
 The two per-channel feature streams are combined with a **gated fusion** and
 mapped to the forecast horizon by a linear head. Instance normalization
@@ -138,17 +139,35 @@ TSP/
 | `model.mamba_d_state` | SSM state dimension `N` |
 | `model.mamba_expand` | inner expansion factor (`d_inner = expand * d_model`) |
 | `model.time_kernel_size` | moving-average window for trend extraction |
+| `model.freq_encoder` | `linear` (default) or `mamba` for the frequency branch |
 | `model.freq_sparsity` | fraction of high frequencies to drop (low-pass) |
 | `model.fusion` | `gated`, `sum`, or `concat` |
 | `train.amp` | mixed precision (recommended on RTX 5090) |
 | `train.compile` | `torch.compile` (enable once your build supports sm_120) |
 
-## Mamba encoder (time branch)
+## Mamba encoders
 
-The time-domain branch uses a **Mamba** selective state-space encoder
-(`src/models/mamba_block.py`). It ships as a **self-contained pure-PyTorch
-implementation** (selective scan + causal depthwise conv), so it trains on any
-CPU or GPU with no custom kernels.
+Both branches can use **Mamba** selective state-space encoders
+(`src/models/mamba_block.py`), shipped as a **self-contained pure-PyTorch
+implementation** (selective scan + causal depthwise conv), so they train on
+any CPU or GPU with no custom kernels.
+
+- **Time branch** (`time_encoder: mamba`, default): a *causal* `MambaEncoder`
+  over the timesteps — the natural arrow-of-time bias.
+- **Frequency branch** (`freq_encoder: mamba`, off by default): a
+  *bidirectional* `BiMambaEncoder` over the frequency bins. Each bin's
+  [real, imag] pair is embedded and scanned DC→Nyquist **and** Nyquist→DC —
+  frequency has no arrow of time, so a one-way scan would be an arbitrary
+  bias. Compared to the dense `linear` complex filter, the mixing is
+  input-dependent (selective) and scales linearly in the number of bins.
+
+```bash
+# Fully-SSM dual domain: Mamba over time AND over frequency bins
+python -m src.train --freq_encoder mamba
+
+# A/B against the dense complex filter baseline
+python -m src.train --freq_encoder linear
+```
 
 If the official `mamba-ssm` package is installed, `MambaLayer` **automatically**
 uses its fused CUDA kernels instead — no code change needed:

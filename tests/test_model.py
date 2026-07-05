@@ -11,7 +11,7 @@ from src.data.dataset import (
 )
 from src.models import DualDomainForecaster
 from src.models.freq_branch import FreqBranch
-from src.models.mamba_block import MambaEncoder, MambaSSM
+from src.models.mamba_block import BiMambaEncoder, MambaEncoder, MambaSSM
 from src.models.time_branch import TimeBranch
 
 
@@ -35,6 +35,38 @@ def test_mamba_encoder_causal():
         y2 = enc(x2)
     # Outputs before the perturbed step must be unchanged.
     assert torch.allclose(y1[:, :-1], y2[:, :-1], atol=1e-5)
+
+
+def test_bimamba_encoder_bidirectional():
+    """Unlike the causal encoder, a future edit MUST reach earlier outputs."""
+    torch.manual_seed(0)
+    enc = BiMambaEncoder(d_model=16, n_layers=1, d_state=8, use_official=False).eval()
+    x = torch.randn(1, 20, 16)
+    with torch.no_grad():
+        y1 = enc(x)
+        x2 = x.clone()
+        x2[:, -1] += 5.0  # perturb only the last position
+        y2 = enc(x2)
+    assert y1.shape == x.shape
+    # Earlier positions should change: information flows backward too.
+    assert not torch.allclose(y1[:, :-1], y2[:, :-1], atol=1e-4)
+
+
+def test_freq_branch_mamba_shape():
+    b, l, c, d = 4, 96, 7, 32
+    x = torch.randn(b, l, c)
+    branch = FreqBranch(seq_len=l, d_model=d, encoder="mamba", use_official_mamba=False)
+    assert branch(x).shape == (b, c, d)
+
+
+def test_model_freq_mamba_forward():
+    b, l, h, c = 2, 48, 12, 3
+    x = torch.randn(b, l, c)
+    model = DualDomainForecaster(
+        seq_len=l, pred_len=h, n_channels=c, d_model=16,
+        freq_encoder="mamba", mamba_layers=1,
+    )
+    assert model(x).shape == (b, h, c)
 
 
 def test_time_branch_shape():

@@ -31,7 +31,7 @@ model:
   time_kernel_size: 25       # moving-average window for series decomposition
   time_dropout: 0.1
   time_encoder: mamba        # {mamba, mlp} sequence encoder for the time branch
-  # Mamba (selective SSM) settings (used when time_encoder == mamba)
+  # Mamba (selective SSM) settings (shared by time_encoder/freq_encoder == mamba)
   mamba_layers: 2            # number of stacked Mamba blocks
   mamba_d_state: 16          # SSM state dimension (N)
   mamba_d_conv: 4            # causal conv kernel width
@@ -41,6 +41,10 @@ model:
   freq_hidden: 128
   freq_dropout: 0.1
   freq_sparsity: 0.0         # 0..1 fraction of high frequencies to zero out
+  freq_encoder: linear       # {linear, mamba} spectral encoder
+                             #   linear: dense complex filter over bins (cheap baseline)
+                             #   mamba:  bidirectional selective SSM over bins
+                             #           (reuses the mamba_* settings below)
   # Fusion
   fusion: gated              # {gated, sum, concat}
   head_dropout: 0.1

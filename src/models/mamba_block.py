@@ -170,6 +170,69 @@ class MambaLayer(nn.Module):
         return x + mix
 
 
+class BiMambaEncoder(nn.Module):
+    """Bidirectional Mamba: forward scan + backward scan, fused per layer.
+
+    Mamba's scan is inherently directional. Over the *time* axis that is the
+    right bias (causality), but over axes with no arrow of time — e.g. the
+    frequency bins of a spectrum — a single direction is arbitrary. Each layer
+    here runs two mixers, one on the sequence and one on its reverse, and sums
+    them inside the residual so every position sees both sides.
+    """
+
+    def __init__(
+        self,
+        d_model: int,
+        n_layers: int = 2,
+        d_state: int = 16,
+        d_conv: int = 4,
+        expand: int = 2,
+        dt_rank: Optional[int] = None,
+        use_official: bool = True,
+    ):
+        super().__init__()
+        self.fwd_layers = nn.ModuleList(
+            [
+                MambaLayer(
+                    d_model=d_model,
+                    d_state=d_state,
+                    d_conv=d_conv,
+                    expand=expand,
+                    dt_rank=dt_rank,
+                    use_official=use_official,
+                )
+                for _ in range(n_layers)
+            ]
+        )
+        self.bwd_layers = nn.ModuleList(
+            [
+                MambaLayer(
+                    d_model=d_model,
+                    d_state=d_state,
+                    d_conv=d_conv,
+                    expand=expand,
+                    dt_rank=dt_rank,
+                    use_official=use_official,
+                )
+                for _ in range(n_layers)
+            ]
+        )
+        self.norm = RMSNorm(d_model)
+
+    @property
+    def using_official_kernels(self) -> bool:
+        return any(l.using_official_kernels for l in self.fwd_layers) or any(
+            l.using_official_kernels for l in self.bwd_layers
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        for fwd, bwd in zip(self.fwd_layers, self.bwd_layers):
+            # MambaLayer returns x + mix(norm(x)); combining both directions
+            # and subtracting one x keeps a single residual stream.
+            x = fwd(x) + bwd(x.flip(1)).flip(1) - x
+        return self.norm(x)
+
+
 class MambaEncoder(nn.Module):
     """A stack of :class:`MambaLayer` blocks with a final norm."""
 

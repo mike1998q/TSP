@@ -46,6 +46,7 @@ class DualDomainForecaster(nn.Module):
         freq_hidden: int = 128,
         freq_dropout: float = 0.1,
         freq_sparsity: float = 0.0,
+        freq_encoder: str = "linear",
         fusion: str = "gated",
         head_dropout: float = 0.1,
     ):
@@ -72,6 +73,12 @@ class DualDomainForecaster(nn.Module):
             freq_hidden=freq_hidden,
             dropout=freq_dropout,
             sparsity=freq_sparsity,
+            encoder=freq_encoder,
+            mamba_layers=mamba_layers,
+            mamba_d_state=mamba_d_state,
+            mamba_d_conv=mamba_d_conv,
+            mamba_expand=mamba_expand,
+            use_official_mamba=use_official_mamba,
         )
         self.fusion = FeatureFusion(d_model=d_model, mode=fusion)
         self.head = nn.Sequential(
@@ -124,6 +131,7 @@ def build_model(cfg: dict, n_channels: int) -> DualDomainForecaster:
         freq_hidden=mcfg["freq_hidden"],
         freq_dropout=mcfg["freq_dropout"],
         freq_sparsity=mcfg.get("freq_sparsity", 0.0),
+        freq_encoder=mcfg.get("freq_encoder", "linear"),
         fusion=mcfg["fusion"],
         head_dropout=mcfg["head_dropout"],
     )

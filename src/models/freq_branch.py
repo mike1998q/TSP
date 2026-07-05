@@ -1,17 +1,28 @@
-"""Frequency-domain branch: learnable spectral filtering via rFFT.
+"""Frequency-domain branch: rFFT + a learnable spectral encoder.
 
-The window is transformed to the frequency domain with a real FFT, then a
-complex-valued linear filter (implemented as two real matrices acting on the
-real and imaginary parts) reweights and mixes frequency bins. This lets the
-model learn global, periodic structure with a receptive field spanning the
-whole look-back window at O(L log L) cost -- complementary to the local view
-of the time-domain branch. The idea follows FreTS/FEDformer-style frequency
-MLPs.
+The window is transformed to the frequency domain with a real FFT, then one of
+two encoders processes the spectrum (selectable via ``encoder``):
+
+- ``linear`` — a complex-valued linear filter (two real matrices acting on the
+  real and imaginary parts) that densely reweights and mixes frequency bins.
+  Fixed mixing weights, O(n_freq^2) parameters; strong cheap baseline.
+- ``mamba``  — a **bidirectional Mamba** (selective SSM) scanned over the
+  frequency bins. Each bin's [real, imag] pair is embedded per position, and
+  forward + backward scans let every bin condition on the whole spectrum with
+  *input-dependent* (selective) mixing at O(n_freq) cost. Bidirectional because
+  frequency has no arrow of time — a one-way scan would be an arbitrary bias.
+
+Either way the branch captures global, periodic structure with a full-window
+receptive field — complementary to the local view of the time-domain branch.
+The linear path follows FreTS/FEDformer-style frequency MLPs; the Mamba path
+follows FMamba-style spectral SSMs.
 """
 from __future__ import annotations
 
 import torch
 import torch.nn as nn
+
+from .mamba_block import BiMambaEncoder
 
 
 class ComplexLinear(nn.Module):
@@ -48,22 +59,49 @@ class FreqBranch(nn.Module):
         freq_hidden: int = 128,
         dropout: float = 0.1,
         sparsity: float = 0.0,
+        encoder: str = "linear",
+        mamba_layers: int = 2,
+        mamba_d_state: int = 16,
+        mamba_d_conv: int = 4,
+        mamba_expand: int = 2,
+        use_official_mamba: bool = True,
     ):
         super().__init__()
         self.seq_len = seq_len
         self.n_freq = seq_len // 2 + 1  # rFFT output length
         self.sparsity = float(sparsity)
+        self.encoder_kind = encoder
 
-        # Complex spectral filter that mixes frequency bins.
-        self.filter = ComplexLinear(self.n_freq, self.n_freq)
-        # Map the (real|imag) spectrum to the shared feature width.
-        self.proj = nn.Sequential(
-            nn.Linear(2 * self.n_freq, freq_hidden),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(freq_hidden, d_model),
-        )
+        if encoder == "linear":
+            # Complex spectral filter that densely mixes frequency bins.
+            self.filter = ComplexLinear(self.n_freq, self.n_freq)
+            # Map the (real|imag) spectrum to the shared feature width.
+            self.proj = nn.Sequential(
+                nn.Linear(2 * self.n_freq, freq_hidden),
+                nn.GELU(),
+                nn.Dropout(dropout),
+                nn.Linear(freq_hidden, d_model),
+            )
+        elif encoder == "mamba":
+            # Embed each bin's [real, imag] pair, scan bins bidirectionally.
+            self.embed = nn.Linear(2, d_model)
+            self.dropout = nn.Dropout(dropout)
+            self.encoder = BiMambaEncoder(
+                d_model=d_model,
+                n_layers=mamba_layers,
+                d_state=mamba_d_state,
+                d_conv=mamba_d_conv,
+                expand=mamba_expand,
+                use_official=use_official_mamba,
+            )
+        else:
+            raise ValueError(f"Unknown freq encoder: {encoder!r}")
+
         self.norm = nn.LayerNorm(d_model)
+
+    @property
+    def using_official_mamba(self) -> bool:
+        return getattr(getattr(self, "encoder", None), "using_official_kernels", False)
 
     def _low_pass_mask(self, device) -> torch.Tensor:
         """Optionally zero out the highest `sparsity` fraction of frequencies."""
@@ -77,7 +115,8 @@ class FreqBranch(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: (B, L, C) -> operate along time (dim=1).
-        xc = x.transpose(1, 2)                       # (B, C, L)
+        b, l, c = x.shape
+        xc = x.transpose(1, 2)                           # (B, C, L)
         spec = torch.fft.rfft(xc, dim=-1, norm="ortho")  # (B, C, n_freq) complex
         xr, xi = spec.real, spec.imag
 
@@ -85,7 +124,16 @@ class FreqBranch(nn.Module):
         xr = xr * mask
         xi = xi * mask
 
-        yr, yi = self.filter(xr, xi)                 # learned spectral mixing
-        feat = torch.cat([yr, yi], dim=-1)           # (B, C, 2*n_freq)
-        feat = self.proj(feat)                       # (B, C, d_model)
-        return self.norm(feat)
+        if self.encoder_kind == "linear":
+            yr, yi = self.filter(xr, xi)                 # learned spectral mixing
+            feat = torch.cat([yr, yi], dim=-1)           # (B, C, 2*n_freq)
+            feat = self.proj(feat)                       # (B, C, d_model)
+            return self.norm(feat)
+
+        # mamba: bins as a sequence, channel-independent (fold C into batch).
+        bins = torch.stack([xr, xi], dim=-1)             # (B, C, n_freq, 2)
+        bins = bins.reshape(b * c, self.n_freq, 2)       # (B*C, n_freq, 2)
+        h = self.dropout(self.embed(bins))               # (B*C, n_freq, d_model)
+        h = self.encoder(h)                              # bidirectional scan
+        summary = h.mean(dim=1)                          # (B*C, d_model)
+        return self.norm(summary.reshape(b, c, -1))      # (B, C, d_model)
