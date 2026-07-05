@@ -55,10 +55,7 @@ def main():
 
     preds, trues = collect_predictions(model, test_loader, device)
     metrics = all_metrics(preds, trues)
-    print(
-        f"[test] mse={metrics['mse']:.4f} mae={metrics['mae']:.4f} "
-        f"rmse={metrics['rmse']:.4f} mape={metrics['mape']:.4f}"
-    )
+    print(f"[test] mse={metrics['mse']:.4f} mae={metrics['mae']:.4f}")
 
     if args.plot:
         save_prediction_plot(preds, trues, args.plot, channel=args.channel)

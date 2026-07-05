@@ -34,12 +34,13 @@ Targeted local setup:
 - Python **3.10**
 - GPU: **NVIDIA RTX 5090** (Blackwell, compute capability **sm_120**)
 - CUDA **13.0**
+- PyTorch **2.11.0+cu130** (verified)
 
 > **Important — Blackwell needs a matching PyTorch build.** RTX 5090 is
-> `sm_120`. The default PyPI torch wheels (CPU / cu121) do **not** contain
-> Blackwell kernels and will fail at runtime with
-> *"no kernel image is available for execution on the device."* Install a
-> torch build compiled for CUDA 12.8+/13.x (see below).
+> `sm_120`. The default PyPI torch wheels do **not** contain Blackwell
+> kernels and will fail at runtime with
+> *"no kernel image is available for execution on the device."* Install the
+> `+cu130` build from the PyTorch cu130 wheel index (see below).
 
 ## Installation
 
@@ -48,12 +49,8 @@ Targeted local setup:
 conda create -n tsp python=3.10 -y
 conda activate tsp        # or: python3.10 -m venv .venv && source .venv/bin/activate
 
-# 2. Install a Blackwell-capable PyTorch FIRST.
-#    Prefer the CUDA 13.0 channel; fall back to cu128 if cu130 wheels aren't
-#    published for your date.
-pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu130
-#   fallback:
-#   pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu128
+# 2. Install the Blackwell-capable PyTorch FIRST (torch 2.11.0+cu130).
+pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cu130
 
 # 3. Install the rest.
 pip install -r requirements.txt
@@ -65,7 +62,7 @@ Verify the GPU is actually usable:
 ```bash
 python -c "import torch; print(torch.__version__, torch.cuda.is_available()); \
 print(torch.cuda.get_device_name(0)); print(torch.cuda.get_device_capability(0))"
-# expect: ... True  NVIDIA GeForce RTX 5090  (12, 0)
+# expect: 2.11.0+cu130 True  NVIDIA GeForce RTX 5090  (12, 0)
 ```
 
 ## Quick start
@@ -143,7 +140,7 @@ TSP/
 | `model.freq_sparsity` | fraction of high frequencies to drop (low-pass) |
 | `model.fusion` | `gated`, `sum`, or `concat` |
 | `train.amp` | mixed precision (recommended on RTX 5090) |
-| `train.compile` | `torch.compile` (enable once your build supports sm_120) |
+| `train.compile` | `torch.compile` (supported on torch 2.11+cu130; opt-in) |
 
 ## Mamba encoders
 
@@ -192,8 +189,8 @@ python -m src.train --time_encoder mlp
 
 ## Metrics
 
-`src/utils/metrics.py` reports **MSE**, **MAE**, **RMSE**, and **MAPE** on the
-held-out chronological test split.
+`src/utils/metrics.py` reports **MSE** and **MAE** on the held-out
+chronological test split (also used for validation/early stopping).
 
 ## Tests
 

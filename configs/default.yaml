@@ -61,4 +61,4 @@ train:
   patience: 7                # early-stopping patience (epochs)
   amp: true                  # mixed precision (recommended on RTX 5090)
   lr_scheduler: cosine       # {none, cosine, step}
-  compile: false             # torch.compile (set true once your build supports sm_120)
+  compile: false             # torch.compile (supported on torch 2.11+cu130; opt-in)

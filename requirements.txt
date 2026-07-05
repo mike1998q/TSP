@@ -1,16 +1,16 @@
 # Core deep-learning stack
 # NOTE on RTX 5090 (Blackwell, sm_120) + CUDA 13.0:
-#   Blackwell GPUs require a PyTorch build compiled with CUDA 12.8+ / 13.x.
-#   Do NOT install the default PyPI CPU/cu121 wheels -- they will fail with
-#   "no kernel image is available for execution on the device" (sm_120).
-#   Install torch separately, e.g.:
-#     pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu130
-#   (or the cu128 channel if cu130 wheels are not yet published for your date).
-#   See README.md -> "Installation" for the exact, tested command.
+#   Blackwell GPUs need a PyTorch build compiled for CUDA 13.x. The verified
+#   local setup for this project is torch 2.11.0+cu130, installed from the
+#   cu130 wheel index:
+#     pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cu130
+#   Do NOT install the default PyPI wheels -- they lack sm_120 kernels and
+#   fail with "no kernel image is available for execution on the device".
+#   See README.md -> "Installation".
 #
-# torch is intentionally left unpinned here so this file stays install-safe on
+# torch is left loosely pinned here so this file stays install-safe on
 # machines without the Blackwell wheel; install torch via the index-url above.
-torch>=2.6.0
+torch>=2.11.0
 
 numpy>=1.24
 pandas>=2.0

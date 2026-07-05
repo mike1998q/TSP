@@ -172,10 +172,7 @@ def train(cfg: dict) -> dict:
         state = torch.load(best_path, map_location=device, weights_only=False)
         model.load_state_dict(state["model_state"])
     test_metrics = evaluate(model, test_loader, loss_fn, device)
-    print(
-        f"[test] mse={test_metrics['mse']:.4f} mae={test_metrics['mae']:.4f} "
-        f"rmse={test_metrics['rmse']:.4f} mape={test_metrics['mape']:.4f}"
-    )
+    print(f"[test] mse={test_metrics['mse']:.4f} mae={test_metrics['mae']:.4f}")
 
     results = {
         "best_val_loss": best_val,
