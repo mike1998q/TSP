@@ -98,7 +98,8 @@ standard long-term forecasting benchmarks:
 | Exchange-Rate | `configs/exchange_rate.yaml` | 8 | 1 day | 7,588 | 0.7/0.1/0.2 | 32 | 1e-4 | d_model 64, dropout 0.3, low-pass 0.5 |
 | Traffic | `configs/traffic.yaml` | 862 | 1 h | 17,544 | 0.7/0.1/0.2 | 8 | 1e-3 | halve batch on OOM |
 
-All use `seq_len: 96`, `pred_len: 96` by default; the standard horizons
+ETT configs use `seq_len: 336` (the regime where the linear skip shines on
+ETT); the others use `seq_len: 96`. All default to `pred_len: 96`; the standard horizons
 {96, 192, 336, 720} are a CLI override away. Batch sizes are sized for a
 32 GB RTX 5090 given the channel-independent folding (effective sequences per
 step = `batch_size × channels`).
@@ -185,6 +186,8 @@ TSP/
 | `model.freq_encoder` | `linear` (default) or `mamba` for the frequency branch |
 | `model.freq_sparsity` | fraction of high frequencies to drop (low-pass) |
 | `model.fusion` | `gated`, `sum`, or `concat` |
+| `model.direct_skip` | DLinear-style linear history→future skip (default on) |
+| `train.patience` / `train.min_delta` | early-stopping knobs |
 | `train.amp` | mixed precision (recommended on RTX 5090) |
 | `train.compile` | `torch.compile` (supported on torch 2.11+cu130; opt-in) |
 
@@ -237,6 +240,38 @@ python -m src.train --time_encoder mlp
 
 `src/utils/metrics.py` reports **MSE** and **MAE** on the held-out
 chronological test split (also used for validation/early stopping).
+
+## Troubleshooting
+
+**Training stops after only a few epochs ("early shutdown").**
+Two mechanisms used to cause this, both fixed:
+
+1. *AMP fp16 instability in the Mamba scan* — the selective scan
+   (`exp(Δ·A)` + an L-step recurrent state accumulation) under/overflows in
+   half precision. When the validation loss went NaN, `NaN < best` is always
+   false, so patience silently ran out and training stopped with a garbage
+   model. The scan (and RMSNorm) now always executes in fp32 internally, even
+   under `train.amp: true`, matching what the official fused kernels do. If
+   you still see the `[warn] validation loss is not finite` message, lower
+   the LR or set `train.amp: false`.
+2. *Over-aggressive early stopping* — patience was too small relative to the
+   cosine LR schedule, killing runs while the LR was still high. Patience is
+   raised (ETT: 10/6) and `train.min_delta` controls the improvement
+   threshold explicitly.
+
+**Poor accuracy on ETT.**
+ETT is the benchmark where a plain linear history→future map (DLinear) is
+near-SOTA. The model originally forecast from a pooled `d_model` summary
+alone — an information bottleneck that collapses toward mean-reverting
+predictions on ETT. The model now includes a **direct linear skip**
+(`model.direct_skip: true`, default): per-component (seasonal/trend) linear
+maps from the look-back window straight to the horizon, with the deep
+dual-domain path zero-initialized so it starts as an exact DLinear and learns
+nonlinear *corrections* on top. ETT configs also use `seq_len: 336`, the
+regime where linear-skip models perform best on ETT.
+
+Old checkpoints from before the skip was added are incompatible with the new
+`state_dict` — retrain (or set `model.direct_skip: false` to load them).
 
 ## Tests
 

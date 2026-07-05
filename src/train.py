@@ -115,6 +115,7 @@ def train(cfg: dict) -> dict:
 
     best_val = float("inf")
     patience = cfg["train"].get("patience", 10)
+    min_delta = cfg["train"].get("min_delta", 0.0)
     bad_epochs = 0
 
     for epoch in range(1, cfg["train"]["epochs"] + 1):
@@ -148,7 +149,14 @@ def train(cfg: dict) -> dict:
             f"| {dt:.1f}s"
         )
 
-        if val_metrics["loss"] < best_val - 1e-6:
+        if not np.isfinite(val_metrics["loss"]):
+            print(
+                "[warn] validation loss is not finite. If this persists, "
+                "training has diverged: try a lower lr, or set train.amp: "
+                "false (the Mamba scan itself already runs in fp32)."
+            )
+
+        if val_metrics["loss"] < best_val - min_delta:
             best_val = val_metrics["loss"]
             bad_epochs = 0
             torch.save(

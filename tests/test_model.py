@@ -110,6 +110,49 @@ def test_fusion_modes():
         assert model(x).shape == (b, h, c)
 
 
+def test_direct_skip_toggle():
+    b, l, h, c = 2, 48, 12, 3
+    x = torch.randn(b, l, c)
+    for flag in (True, False):
+        model = DualDomainForecaster(
+            seq_len=l, pred_len=h, n_channels=c, d_model=16, direct_skip=flag
+        )
+        assert model(x).shape == (b, h, c)
+
+
+def test_direct_skip_starts_as_linear_model():
+    """With direct_skip, the deep head is zero-init: the initial forecast must
+    equal the pure linear-skip forecast (deep path contributes exactly 0)."""
+    torch.manual_seed(0)
+    b, l, h, c = 2, 48, 12, 3
+    x = torch.randn(b, l, c)
+    model = DualDomainForecaster(
+        seq_len=l, pred_len=h, n_channels=c, d_model=16, direct_skip=True
+    ).eval()
+    with torch.no_grad():
+        full = model(x)
+        # Recompute just the linear-skip path.
+        mean = x.mean(dim=1, keepdim=True)
+        std = torch.sqrt(x.var(dim=1, keepdim=True, unbiased=False) + 1e-5)
+        x_norm = (x - mean) / std
+        seasonal, trend = model.direct_decomp(x_norm)
+        direct = model.direct_seasonal(seasonal.transpose(1, 2)) + model.direct_trend(
+            trend.transpose(1, 2)
+        )
+        expected = direct.transpose(1, 2) * std + mean
+    assert torch.allclose(full, expected, atol=1e-5)
+
+
+def test_mamba_finite_under_autocast():
+    """The selective scan must run in fp32 under autocast and stay finite."""
+    torch.manual_seed(0)
+    enc = MambaEncoder(d_model=16, n_layers=2, d_state=8, use_official=False)
+    x = torch.randn(2, 64, 16) * 10  # large-ish values to stress fp16/bf16
+    with torch.autocast(device_type="cpu", dtype=torch.bfloat16):
+        y = enc(x)
+    assert torch.isfinite(y).all()
+
+
 def test_dataset_windowing():
     data = generate_synthetic(length=500, channels=3, seed=1)
     ds = SlidingWindowDataset(data, seq_len=96, pred_len=24)

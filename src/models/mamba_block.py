@@ -37,8 +37,11 @@ class RMSNorm(nn.Module):
         self.weight = nn.Parameter(torch.ones(d))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        norm = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
-        return norm * self.weight
+        # Compute the statistics in fp32 (autocast treats nn.LayerNorm this
+        # way automatically, but not custom norms like this one).
+        xf = x.float()
+        norm = xf * torch.rsqrt(xf.pow(2).mean(-1, keepdim=True) + self.eps)
+        return (norm * self.weight.float()).to(x.dtype)
 
 
 class MambaSSM(nn.Module):
@@ -105,6 +108,15 @@ class MambaSSM(nn.Module):
         return y + u * D
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # The recurrent scan (exp(delta*A) + L-step state accumulation) is
+        # numerically fragile in fp16/bf16: under AMP it under/overflows and
+        # poisons training with NaNs. Run the whole mixer in fp32 and cast
+        # back, mirroring what the official fused kernels do internally.
+        in_dtype = x.dtype
+        with torch.autocast(device_type=x.device.type, enabled=False):
+            return self._forward_fp32(x.float()).to(in_dtype)
+
+    def _forward_fp32(self, x: torch.Tensor) -> torch.Tensor:
         b, l, _ = x.shape
         x_res = self.in_proj(x)                                   # (B, L, 2*d_inner)
         x_in, res = x_res.chunk(2, dim=-1)

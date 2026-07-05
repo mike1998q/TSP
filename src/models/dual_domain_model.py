@@ -25,7 +25,7 @@ import torch.nn as nn
 
 from .freq_branch import FreqBranch
 from .fusion import FeatureFusion
-from .time_branch import TimeBranch
+from .time_branch import SeriesDecomp, TimeBranch
 
 
 class DualDomainForecaster(nn.Module):
@@ -49,6 +49,7 @@ class DualDomainForecaster(nn.Module):
         freq_encoder: str = "linear",
         fusion: str = "gated",
         head_dropout: float = 0.1,
+        direct_skip: bool = True,
     ):
         super().__init__()
         self.seq_len = seq_len
@@ -87,6 +88,21 @@ class DualDomainForecaster(nn.Module):
             nn.Linear(d_model, pred_len),
         )
 
+        # DLinear-style direct linear skip: per-component linear maps from the
+        # look-back window straight to the horizon. On benchmarks like ETT a
+        # plain linear history->future map is a near-SOTA baseline; without
+        # it, forecasting from a pooled d_model summary alone collapses toward
+        # mean-reverting predictions. The deep dual-domain path then learns a
+        # *correction*: its head is zero-initialized so training starts from
+        # exactly the linear forecast and adds nonlinearity only as needed.
+        self.direct_skip = direct_skip
+        if direct_skip:
+            self.direct_decomp = SeriesDecomp(time_kernel_size)
+            self.direct_seasonal = nn.Linear(seq_len, pred_len)
+            self.direct_trend = nn.Linear(seq_len, pred_len)
+            nn.init.zeros_(self.head[-1].weight)
+            nn.init.zeros_(self.head[-1].bias)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """x: (B, L, C) -> forecast (B, H, C).
 
@@ -105,6 +121,13 @@ class DualDomainForecaster(nn.Module):
 
         out = self.head(fused)                  # (B, C, H)
         out = out.transpose(1, 2)               # (B, H, C)
+
+        if self.direct_skip:
+            seasonal, trend = self.direct_decomp(x_norm)          # (B, L, C)
+            direct = self.direct_seasonal(seasonal.transpose(1, 2)) + self.direct_trend(
+                trend.transpose(1, 2)
+            )                                                     # (B, C, H)
+            out = out + direct.transpose(1, 2)                    # (B, H, C)
 
         # De-normalize.
         out = out * std + mean
@@ -134,4 +157,5 @@ def build_model(cfg: dict, n_channels: int) -> DualDomainForecaster:
         freq_encoder=mcfg.get("freq_encoder", "linear"),
         fusion=mcfg["fusion"],
         head_dropout=mcfg["head_dropout"],
+        direct_skip=mcfg.get("direct_skip", True),
     )
