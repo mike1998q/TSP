@@ -99,19 +99,21 @@ standard long-term forecasting benchmarks:
 
 | Dataset | Config | Channels | Freq | Rows | Split | Batch | LR | Notes |
 |---|---|---|---|---|---|---|---|---|
-| ETTh1 | `configs/ETTh1.yaml` | 7 | 1 h | 17,420 | canonical 12/4/4 mo | 32 | 1e-4 | halve LR, dropout 0.2 |
-| ETTh2 | `configs/ETTh2.yaml` | 7 | 1 h | 17,420 | canonical 12/4/4 mo | 32 | 1e-4 | halve LR, 1 Mamba layer, dropout 0.3, low-pass 0.3 |
-| ETTm1 | `configs/ETTm1.yaml` | 7 | 15 min | 69,680 | canonical 12/4/4 mo | 32 | 1e-4 | halve LR |
-| ETTm2 | `configs/ETTm2.yaml` | 7 | 15 min | 69,680 | canonical 12/4/4 mo | 32 | 1e-4 | halve LR, dropout 0.2, low-pass 0.2 |
+| ETTh1 | `configs/ETTh1.yaml` | 7 | 1 h | 17,420 | canonical 12/4/4 mo | 32 | 1e-4 | halve LR, 1 Mamba layer, dropout 0.2, mixer off |
+| ETTh2 | `configs/ETTh2.yaml` | 7 | 1 h | 17,420 | canonical 12/4/4 mo | 32 | 1e-4 | halve LR, 1 Mamba layer, dropout 0.3, low-pass 0.3, mixer off |
+| ETTm1 | `configs/ETTm1.yaml` | 7 | 15 min | 69,680 | canonical 12/4/4 mo | 32 | 1e-4 | halve LR, mixer off |
+| ETTm2 | `configs/ETTm2.yaml` | 7 | 15 min | 69,680 | canonical 12/4/4 mo | 32 | 1e-4 | halve LR, dropout 0.2, low-pass 0.2, mixer off |
 | Weather | `configs/weather.yaml` | 21 | 10 min | 52,696 | 0.7/0.1/0.2 | 32 | 1e-4 | halve LR, d_model 256 |
-| Electricity | `configs/electricity.yaml` | 321 | 1 h | 26,304 | 0.7/0.1/0.2 | 16 | 5e-4 | halve LR |
+| Electricity | `configs/electricity.yaml` | 321 | 1 h | 26,304 | 0.7/0.1/0.2 | 16 | 5e-4 | halve LR, d_model 512, MLP time + 2 variate-Mamba layers |
 | Solar-Energy | `configs/solar.yaml` | 137 | 10 min | 52,560 | 0.7/0.1/0.2 | 16 | 5e-4 | halve LR, reads `solar_AL.txt` directly |
 | Exchange-Rate | `configs/exchange_rate.yaml` | 8 | 1 day | 7,588 | 0.7/0.1/0.2 | 32 | 1e-4 | halve LR, d_model 64, dropout 0.3, low-pass 0.5, mixer off |
-| Traffic | `configs/traffic.yaml` | 862 | 1 h | 17,544 | 0.7/0.1/0.2 | 8 | 1e-3 | halve LR, halve batch on OOM |
+| Traffic | `configs/traffic.yaml` | 862 | 1 h | 17,544 | 0.7/0.1/0.2 | 16 | 1e-3 | halve LR, d_model 512, MLP time + 2 variate-Mamba layers |
 
-All configs train 10 epochs with the halve LR schedule and patience 3, and
-enable the cross-channel mixer (`channel_mixer_layers: 1`) except
-Exchange-Rate (near-random-walk; kept channel-independent).
+All configs train 10 epochs with the halve LR schedule. The cross-channel
+mixer is sized to the dataset: **off** on ETT and Exchange-Rate (few channels,
+small data — it only adds overfitting capacity), 1 layer on weather/solar,
+2 layers at d_model 512 on electricity/traffic where it is the core of the
+model (the S-Mamba recipe: MLP over time, Mamba over variates).
 
 All datasets use `seq_len: 96` — the standard fixed look-back of the
 Autoformer/TimesNet/iTransformer evaluation protocol, kept identical across
@@ -318,11 +320,28 @@ cosine still holds the LR high, so patience fires mid-schedule). All configs
 now use the halve recipe. The remaining accuracy gap to S-Mamba-class models
 was architectural: they are **channel-mixing** — each variate's forecast uses
 the other variates' state — while this model was strictly
-channel-independent. `model.channel_mixer_layers` (default 1) adds a
-bidirectional Mamba over the variate dimension inside each branch before its
-head, plus a whole-window series embedding in the time branch. This is where
-first-class models earn their margin on electricity (321 ch), traffic
-(862 ch), and weather (21 ch); expect the largest gains there.
+channel-independent. `model.channel_mixer_layers` adds a bidirectional Mamba
+(with per-layer FFN, the S-Mamba block) over the variate dimension inside
+each branch before its head, plus a whole-window series embedding in the time
+branch.
+
+**Where the mixer belongs — capacity must match the dataset.** Two opposite
+failure modes, both observed:
+
+- *ETTh1/ETTh2 early-stopped again* after the mixer was enabled there: it
+  tripled the model to ~824K params against only 8,449 train windows on
+  7 near-independent channels — pure overfitting capacity, val degraded from
+  epoch ~2 and patience fired. ETT configs now run **mixer off**, a shallow
+  time encoder (1 Mamba layer), and patience 10 so all 10 (cheap, halve-LR)
+  epochs always run with the best checkpoint kept — early stop cannot fire.
+- *Electricity/traffic were poor* for the opposite reason: underfitting.
+  Top models run these at d_model 512 with multiple variate-mixing layers;
+  we were at d_model 128 because the time-axis Mamba scan (folded over
+  batch x channels) was the memory hog. The high-channel configs now follow
+  the actual S-Mamba recipe: **MLP/linear over the time axis, Mamba capacity
+  in the variate dimension** — `time_encoder: mlp`, `d_model: 512`,
+  `channel_mixer_layers: 2` (~19M params), traffic batch 16. The Mamba scan
+  over 321/862 variate tokens is cheap; the model scales to top-model width.
 
 ## Tests
 

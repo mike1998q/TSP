@@ -23,7 +23,7 @@ model:
   time_kernel_size: 25
   time_dropout: 0.2          # small dataset -> stronger regularization
   time_encoder: mamba
-  mamba_layers: 2
+  mamba_layers: 1            # small data: shallow encoder
   mamba_d_state: 16
   mamba_d_conv: 4
   mamba_expand: 2
@@ -32,7 +32,8 @@ model:
   freq_dropout: 0.2
   freq_sparsity: 0.0
   freq_encoder: linear
-  channel_mixer_layers: 1  # BiMamba across variates (S-Mamba style)
+  channel_mixer_layers: 0  # OFF: 7 channels + tiny train set -> the mixer
+                           # only adds overfitting capacity on ETT
   fusion: gated
   head_dropout: 0.2
 
@@ -45,7 +46,7 @@ train:
   loss: mse
   grad_clip: 5.0
   num_workers: 4
-  patience: 3
+  patience: 10
   min_delta: 0.0
   amp: true
   lr_scheduler: halve      # lr *= 0.5 each epoch (standard ETT recipe)

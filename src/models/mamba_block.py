@@ -187,9 +187,11 @@ class BiMambaEncoder(nn.Module):
 
     Mamba's scan is inherently directional. Over the *time* axis that is the
     right bias (causality), but over axes with no arrow of time — e.g. the
-    frequency bins of a spectrum — a single direction is arbitrary. Each layer
-    here runs two mixers, one on the sequence and one on its reverse, and sums
-    them inside the residual so every position sees both sides.
+    frequency bins of a spectrum, or the variate/channel dimension — a single
+    direction is arbitrary. Each layer here runs two mixers, one on the
+    sequence and one on its reverse, sums them inside the residual so every
+    position sees both sides, then applies a position-wise FFN (the
+    S-Mamba/Transformer block recipe: mix -> FFN -> norm).
     """
 
     def __init__(
@@ -201,6 +203,7 @@ class BiMambaEncoder(nn.Module):
         expand: int = 2,
         dt_rank: Optional[int] = None,
         use_official: bool = True,
+        ffn_dropout: float = 0.0,
     ):
         super().__init__()
         self.fwd_layers = nn.ModuleList(
@@ -229,6 +232,18 @@ class BiMambaEncoder(nn.Module):
                 for _ in range(n_layers)
             ]
         )
+        self.ffn_norms = nn.ModuleList([RMSNorm(d_model) for _ in range(n_layers)])
+        self.ffns = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.Linear(d_model, 2 * d_model),
+                    nn.GELU(),
+                    nn.Dropout(ffn_dropout),
+                    nn.Linear(2 * d_model, d_model),
+                )
+                for _ in range(n_layers)
+            ]
+        )
         self.norm = RMSNorm(d_model)
 
     @property
@@ -238,10 +253,13 @@ class BiMambaEncoder(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        for fwd, bwd in zip(self.fwd_layers, self.bwd_layers):
+        for fwd, bwd, ffn_norm, ffn in zip(
+            self.fwd_layers, self.bwd_layers, self.ffn_norms, self.ffns
+        ):
             # MambaLayer returns x + mix(norm(x)); combining both directions
             # and subtracting one x keeps a single residual stream.
             x = fwd(x) + bwd(x.flip(1)).flip(1) - x
+            x = x + ffn(ffn_norm(x))
         return self.norm(x)
 
 

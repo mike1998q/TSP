@@ -19,20 +19,21 @@ data:
   scale: true
 
 model:
-  d_model: 128
+  d_model: 512               # top-model capacity for many variates
   time_kernel_size: 25
   time_dropout: 0.1
-  time_encoder: mamba
+  time_encoder: mlp          # S-Mamba recipe: linear/MLP over time,
+                             # Mamba over variates (memory-scalable)
   mamba_layers: 2
   mamba_d_state: 16
   mamba_d_conv: 4
   mamba_expand: 2
   use_official_mamba: true
-  freq_hidden: 128
+  freq_hidden: 512
   freq_dropout: 0.1
   freq_sparsity: 0.0
   freq_encoder: linear
-  channel_mixer_layers: 1  # BiMamba across variates (S-Mamba style)
+  channel_mixer_layers: 2  # the core of the model on high-channel data
   fusion: gated
   head_dropout: 0.1
 
@@ -45,7 +46,7 @@ train:
   loss: mse
   grad_clip: 5.0
   num_workers: 4
-  patience: 3
+  patience: 5
   amp: true
   lr_scheduler: halve      # lr *= 0.5 each epoch; converges before patience can misfire
   compile: false
