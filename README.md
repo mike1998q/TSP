@@ -92,10 +92,10 @@ standard long-term forecasting benchmarks:
 
 | Dataset | Config | Channels | Freq | Rows | Split | Batch | LR | Notes |
 |---|---|---|---|---|---|---|---|---|
-| ETTh1 | `configs/ETTh1.yaml` | 7 | 1 h | 17,420 | 0.6/0.2/0.2 | 32 | 2e-4 | dropout 0.2 |
-| ETTh2 | `configs/ETTh2.yaml` | 7 | 1 h | 17,420 | 0.6/0.2/0.2 | 32 | 1e-4 | 1 Mamba layer, dropout 0.3, low-pass 0.3 |
-| ETTm1 | `configs/ETTm1.yaml` | 7 | 15 min | 69,680 | 0.6/0.2/0.2 | 32 | 1e-4 | 10 epochs |
-| ETTm2 | `configs/ETTm2.yaml` | 7 | 15 min | 69,680 | 0.6/0.2/0.2 | 32 | 1e-4 | dropout 0.2, low-pass 0.2 |
+| ETTh1 | `configs/ETTh1.yaml` | 7 | 1 h | 17,420 | canonical 12/4/4 mo | 32 | 1e-4 | halve LR, dropout 0.2 |
+| ETTh2 | `configs/ETTh2.yaml` | 7 | 1 h | 17,420 | canonical 12/4/4 mo | 32 | 1e-4 | halve LR, 1 Mamba layer, dropout 0.3, low-pass 0.3 |
+| ETTm1 | `configs/ETTm1.yaml` | 7 | 15 min | 69,680 | canonical 12/4/4 mo | 32 | 1e-4 | halve LR |
+| ETTm2 | `configs/ETTm2.yaml` | 7 | 15 min | 69,680 | canonical 12/4/4 mo | 32 | 1e-4 | halve LR, dropout 0.2, low-pass 0.2 |
 | Weather | `configs/weather.yaml` | 21 | 10 min | 52,696 | 0.7/0.1/0.2 | 32 | 1e-4 | |
 | Electricity | `configs/electricity.yaml` | 321 | 1 h | 26,304 | 0.7/0.1/0.2 | 16 | 5e-4 | |
 | Solar-Energy | `configs/solar.yaml` | 137 | 10 min | 52,560 | 0.7/0.1/0.2 | 16 | 5e-4 | reads `solar_AL.txt` directly |
@@ -280,6 +280,24 @@ often gain further on ETT from a longer look-back (`--seq_len 336`).
 
 Old checkpoints from before this change are incompatible with the new
 `state_dict` — retrain them.
+
+**ETT numbers not comparable to published results / val fluctuates while
+train falls.** Three causes, all fixed:
+
+1. *Wrong split protocol* — published ETT numbers use fixed month borders
+   (train 0–12, val 12–16, test 16–20; the file's tail is discarded), not
+   ratio splits over all rows. `data.split_protocol: ETTh|ETTm` now
+   reproduces the canonical borders exactly (e.g. ETTh1 H=96 →
+   8449/2785/2785 windows); the ETT configs set it by default. A ratio split
+   evaluates on a different — and harder — test window than the literature.
+2. *Schedule mismatch* — cosine over 30 epochs holds the LR high while the
+   deep branches memorize the small training set (train loss falls, val
+   rises from ~epoch 6). ETT configs now use the standard recipe:
+   10 epochs, `lr_scheduler: halve` (lr × 0.5 per epoch), patience 3.
+3. *Noisy fusion start* — the gate initialized at 0.5 while the frequency
+   head was random, so half the initial forecast was noise. The gate now
+   initializes at g ≈ 0.9 toward the time branch (an exact linear model at
+   init) and remains fully learnable.
 
 ## Tests
 

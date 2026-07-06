@@ -128,6 +128,15 @@ def load_raw_series(
     raise ValueError(f"Unknown data source: {source!r}")
 
 
+# Canonical ETT benchmark borders (Informer/Autoformer/TSLib protocol):
+# 12 months train / 4 months val / 4 months test; rows beyond month 20 are
+# NOT used. Hourly: 30*24 rows per month; 15-min: 4x that.
+ETT_BORDERS = {
+    "ETTh": (12 * 30 * 24, 16 * 30 * 24, 20 * 30 * 24),        # 8640/11520/14400
+    "ETTm": (12 * 30 * 96, 16 * 30 * 96, 20 * 30 * 96),        # 34560/46080/57600
+}
+
+
 def build_splits(
     data: np.ndarray,
     seq_len: int,
@@ -135,16 +144,35 @@ def build_splits(
     train_ratio: float,
     val_ratio: float,
     scale: bool,
+    borders: Optional[Tuple[int, int, int]] = None,
 ) -> Tuple[SlidingWindowDataset, SlidingWindowDataset, SlidingWindowDataset, Scaler]:
     """Chronologically split, scale (train-fit), and window the series.
 
     Validation and test windows are extended backwards by `seq_len` so that
     their first prediction target still has a full look-back window, without
     leaking future data across the split boundary's targets.
+
+    If ``borders`` is given as absolute row indices (train_end, val_end,
+    test_end), it overrides the ratio split — required to reproduce the
+    canonical ETT protocol, whose published numbers use fixed month borders
+    and discard the tail of the file. Without it, results on ETT are NOT
+    comparable to the literature.
     """
     n = len(data)
-    n_train = int(n * train_ratio)
-    n_val = int(n * val_ratio)
+    if borders is not None:
+        b0, b1, b2 = borders
+        if b0 >= n:
+            raise ValueError(
+                f"Split border train_end={b0} exceeds series length {n}; "
+                "check data.split_protocol vs the loaded file."
+            )
+        n_train = b0
+        n_val = min(b1, n) - b0
+        data = data[: min(b2, n)]
+        n = len(data)
+    else:
+        n_train = int(n * train_ratio)
+        n_val = int(n * val_ratio)
 
     train_raw = data[:n_train]
     scaler = Scaler.fit(train_raw)

@@ -43,6 +43,8 @@ def get_loss_fn(name: str) -> nn.Module:
 
 
 def build_scheduler(optimizer, cfg, steps_per_epoch):
+    """Per-batch schedulers. The 'halve' schedule is applied per-epoch in the
+    training loop instead (see adjust_lr), so it returns None here."""
     kind = cfg["train"].get("lr_scheduler", "none")
     epochs = cfg["train"]["epochs"]
     if kind == "cosine":
@@ -54,6 +56,19 @@ def build_scheduler(optimizer, cfg, steps_per_epoch):
             optimizer, step_size=max(1, epochs // 3), gamma=0.5
         )
     return None
+
+
+def adjust_lr(optimizer, base_lr: float, epoch: int) -> float:
+    """'halve' schedule (Autoformer's type1): lr = base * 0.5^(epoch-1).
+
+    Decaying hard from epoch 2 on is the standard recipe on small benchmarks
+    like ETT: the model takes its big steps in epoch 1 and fine-tunes after,
+    which suppresses the deep branches' tendency to overfit.
+    """
+    lr = base_lr * (0.5 ** (epoch - 1))
+    for group in optimizer.param_groups:
+        group["lr"] = lr
+    return lr
 
 
 @torch.no_grad()
@@ -118,7 +133,11 @@ def train(cfg: dict) -> dict:
     min_delta = cfg["train"].get("min_delta", 0.0)
     bad_epochs = 0
 
+    halve = cfg["train"].get("lr_scheduler") == "halve"
+
     for epoch in range(1, cfg["train"]["epochs"] + 1):
+        if halve:
+            adjust_lr(optimizer, cfg["train"]["lr"], epoch)
         model.train()
         running = 0.0
         t0 = time.time()
@@ -143,10 +162,11 @@ def train(cfg: dict) -> dict:
         train_loss = running / max(1, len(train_loader))
         val_metrics = evaluate(model, val_loader, loss_fn, device)
         dt = time.time() - t0
+        cur_lr = optimizer.param_groups[0]["lr"]
         print(
             f"epoch {epoch:02d} | train_loss={train_loss:.4f} | "
             f"val_mse={val_metrics['mse']:.4f} val_mae={val_metrics['mae']:.4f} "
-            f"| {dt:.1f}s"
+            f"| lr={cur_lr:.2e} | {dt:.1f}s"
         )
 
         if not np.isfinite(val_metrics["loss"]):

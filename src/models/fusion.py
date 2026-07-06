@@ -17,11 +17,19 @@ class ForecastFusion(nn.Module):
     Modes
     -----
     gated  : per-channel scalar gate g = sigmoid(MLP([feat_t, feat_f])),
-             y = g * y_time + (1 - g) * y_freq. Zero-init keeps g = 0.5 at
-             the start so neither branch dominates before training.
+             y = g * y_time + (1 - g) * y_freq.
     concat : like gated, but the gate is per-horizon-step (finer control).
     sum    : plain average of the two forecasts (no parameters).
+
+    Gate initialization: weights are zeroed and the bias set to +2.2, so the
+    initial gate is a constant g ~ 0.9 favoring the time branch. At init the
+    time branch is an exact linear forecaster while the frequency head is
+    random — an even 0.5/0.5 mix would make half the initial forecast noise,
+    wasting the highest-LR epochs on compensating for it (visible as early
+    val-loss fluctuation on small datasets). The gate remains fully learnable.
     """
+
+    GATE_BIAS_INIT = 2.2  # sigmoid(2.2) ~ 0.90
 
     def __init__(self, d_model: int, pred_len: int, mode: str = "gated"):
         super().__init__()
@@ -34,14 +42,14 @@ class ForecastFusion(nn.Module):
                 nn.Sigmoid(),
             )
             nn.init.zeros_(self.gate[2].weight)
-            nn.init.zeros_(self.gate[2].bias)
+            nn.init.constant_(self.gate[2].bias, self.GATE_BIAS_INIT)
         elif mode == "concat":
             self.gate = nn.Sequential(
                 nn.Linear(2 * d_model, pred_len),
                 nn.Sigmoid(),
             )
             nn.init.zeros_(self.gate[0].weight)
-            nn.init.zeros_(self.gate[0].bias)
+            nn.init.constant_(self.gate[0].bias, self.GATE_BIAS_INIT)
         elif mode == "sum":
             pass
         else:

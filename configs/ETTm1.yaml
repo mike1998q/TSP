@@ -16,6 +16,7 @@ data:
   train_ratio: 0.6
   val_ratio: 0.2
   scale: true
+  split_protocol: ETTm        # canonical 12/4/4-month borders; tail rows unused
 
 model:
   d_model: 128
@@ -43,8 +44,8 @@ train:
   loss: mse
   grad_clip: 5.0
   num_workers: 4
-  patience: 6
+  patience: 3
   min_delta: 0.0
   amp: true
-  lr_scheduler: cosine
+  lr_scheduler: halve      # lr *= 0.5 each epoch (standard ETT recipe)
   compile: false

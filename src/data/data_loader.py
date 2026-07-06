@@ -5,7 +5,7 @@ from typing import Tuple
 
 from torch.utils.data import DataLoader
 
-from .dataset import Scaler, build_splits, load_raw_series
+from .dataset import ETT_BORDERS, Scaler, build_splits, load_raw_series
 
 
 def get_dataloaders(
@@ -30,6 +30,16 @@ def get_dataloaders(
     )
     n_channels = data.shape[1]
 
+    protocol = dcfg.get("split_protocol", "ratio")
+    if protocol == "ratio":
+        borders = None
+    elif protocol in ETT_BORDERS:
+        borders = ETT_BORDERS[protocol]
+    else:
+        raise ValueError(
+            f"Unknown data.split_protocol: {protocol!r} (use ratio, ETTh, ETTm)"
+        )
+
     train_ds, val_ds, test_ds, scaler = build_splits(
         data=data,
         seq_len=dcfg["seq_len"],
@@ -37,6 +47,7 @@ def get_dataloaders(
         train_ratio=dcfg["train_ratio"],
         val_ratio=dcfg["val_ratio"],
         scale=dcfg.get("scale", True),
+        borders=borders,
     )
 
     common = dict(

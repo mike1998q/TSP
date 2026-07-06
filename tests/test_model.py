@@ -171,6 +171,22 @@ def test_dataset_windowing():
     assert y.shape == (24, 3)
 
 
+def test_ett_canonical_borders():
+    """ETTh protocol must reproduce the canonical window counts: for
+    seq_len=96, pred_len=96 -> train 8449, val 2785, test 2785 (matching
+    Informer/Autoformer/TSLib), regardless of the file's extra tail rows."""
+    from src.data.dataset import ETT_BORDERS
+
+    data = generate_synthetic(length=17420, channels=7, seed=3)  # ETTh1-sized
+    train, val, test, _ = build_splits(
+        data, seq_len=96, pred_len=96, train_ratio=0.6, val_ratio=0.2,
+        scale=True, borders=ETT_BORDERS["ETTh"],
+    )
+    assert len(train) == 8640 - 96 - 96 + 1        # 8449
+    assert len(val) == 2880 + 96 - 96 - 96 + 1     # 2785
+    assert len(test) == 2880 + 96 - 96 - 96 + 1    # 2785
+
+
 def test_build_splits_no_leakage_shapes():
     data = generate_synthetic(length=2000, channels=4, seed=2)
     train, val, test, scaler = build_splits(

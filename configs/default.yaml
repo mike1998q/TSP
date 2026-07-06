@@ -23,6 +23,9 @@ data:
   # Splits (fractions of the full series, chronological)
   train_ratio: 0.7
   val_ratio: 0.1             # test_ratio = 1 - train - val
+  split_protocol: ratio      # {ratio, ETTh, ETTm}. ETTh/ETTm use the canonical
+                             # 12/4/4-month row borders (required to reproduce
+                             # published ETT numbers); ratios are then ignored.
   scale: true                # standardize using train-set statistics
 
 model:
@@ -61,5 +64,6 @@ train:
   patience: 10               # early-stopping patience (epochs)
   min_delta: 0.0             # min val-loss improvement to reset patience
   amp: true                  # mixed precision (recommended on RTX 5090)
-  lr_scheduler: cosine       # {none, cosine, step}
+  lr_scheduler: cosine       # {none, cosine, step, halve}
+                             #   halve: lr *= 0.5 per epoch (standard on ETT)
   compile: false             # torch.compile (supported on torch 2.11+cu130; opt-in)
