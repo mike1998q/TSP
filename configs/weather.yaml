@@ -19,7 +19,7 @@ data:
   scale: true
 
 model:
-  d_model: 128
+  d_model: 256
   time_kernel_size: 25
   time_dropout: 0.1
   time_encoder: mamba
@@ -28,16 +28,17 @@ model:
   mamba_d_conv: 4
   mamba_expand: 2
   use_official_mamba: true
-  freq_hidden: 128
+  freq_hidden: 256
   freq_dropout: 0.1
   freq_sparsity: 0.0
   freq_encoder: linear
+  channel_mixer_layers: 1  # BiMamba across variates (S-Mamba style)
   fusion: gated
   head_dropout: 0.1
 
 train:
   device: auto
-  epochs: 15
+  epochs: 10
   batch_size: 32
   lr: 0.0001
   weight_decay: 0.0001
@@ -46,5 +47,5 @@ train:
   num_workers: 4
   patience: 3
   amp: true
-  lr_scheduler: cosine
+  lr_scheduler: halve      # lr *= 0.5 each epoch; converges before patience can misfire
   compile: false

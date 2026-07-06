@@ -67,6 +67,7 @@ class FreqBranch(nn.Module):
         mamba_d_conv: int = 4,
         mamba_expand: int = 2,
         use_official_mamba: bool = True,
+        channel_mixer_layers: int = 0,
     ):
         super().__init__()
         self.seq_len = seq_len
@@ -100,6 +101,20 @@ class FreqBranch(nn.Module):
             raise ValueError(f"Unknown freq encoder: {encoder!r}")
 
         self.norm = nn.LayerNorm(d_model)
+        # Optional cross-channel mixing over the variate dimension (see
+        # TimeBranch): bidirectional Mamba across channels.
+        self.channel_mixer = (
+            BiMambaEncoder(
+                d_model=d_model,
+                n_layers=channel_mixer_layers,
+                d_state=mamba_d_state,
+                d_conv=mamba_d_conv,
+                expand=mamba_expand,
+                use_official=use_official_mamba,
+            )
+            if channel_mixer_layers > 0
+            else None
+        )
         # Spectral forecast head: this branch's own prediction of the horizon.
         self.head = nn.Sequential(
             nn.Dropout(head_dropout),
@@ -144,5 +159,7 @@ class FreqBranch(nn.Module):
             summary = h.mean(dim=1)                      # (B*C, d_model)
             feat = self.norm(summary.reshape(b, c, -1))  # (B, C, d_model)
 
+        if self.channel_mixer is not None:
+            feat = self.channel_mixer(feat)              # mix across variates
         y = self.head(feat)                              # (B, C, H)
         return feat, y

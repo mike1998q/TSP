@@ -32,6 +32,7 @@ model:
   freq_dropout: 0.3
   freq_sparsity: 0.3         # low-pass: high-freq content is mostly noise here
   freq_encoder: linear
+  channel_mixer_layers: 1  # BiMamba across variates (S-Mamba style)
   fusion: gated
   head_dropout: 0.3
 

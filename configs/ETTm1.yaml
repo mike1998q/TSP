@@ -32,6 +32,7 @@ model:
   freq_dropout: 0.1
   freq_sparsity: 0.0
   freq_encoder: linear
+  channel_mixer_layers: 1  # BiMamba across variates (S-Mamba style)
   fusion: gated
   head_dropout: 0.1
 

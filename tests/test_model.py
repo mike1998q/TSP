@@ -152,6 +152,30 @@ def test_forecast_is_convex_combination_of_branches():
     assert (out >= lo - 1e-5).all() and (out <= hi + 1e-5).all()
 
 
+def test_channel_mixer_cross_channel_flow():
+    """With the mixer, perturbing one channel must influence another
+    channel's forecast; without it, channels must stay fully independent."""
+    torch.manual_seed(0)
+    b, l, h, c = 1, 48, 12, 4
+    x = torch.randn(b, l, c)
+    x2 = x.clone()
+    # Perturb only channel 0 — non-constant, so it survives the per-channel
+    # instance normalization (a constant offset would be normalized away).
+    x2[:, : l // 2, 0] += 5.0
+
+    mixed = DualDomainForecaster(
+        seq_len=l, pred_len=h, n_channels=c, d_model=16, channel_mixer_layers=1
+    ).eval()
+    indep = DualDomainForecaster(
+        seq_len=l, pred_len=h, n_channels=c, d_model=16, channel_mixer_layers=0
+    ).eval()
+    with torch.no_grad():
+        d_mixed = (mixed(x)[..., 1:] - mixed(x2)[..., 1:]).abs().max().item()
+        d_indep = (indep(x)[..., 1:] - indep(x2)[..., 1:]).abs().max().item()
+    assert d_indep < 1e-6, "mixer off: other channels' forecasts must not change"
+    assert d_mixed > 1e-6, "mixer on: cross-channel information must flow"
+
+
 def test_mamba_finite_under_autocast():
     """The selective scan must run in fp32 under autocast and stay finite."""
     torch.manual_seed(0)

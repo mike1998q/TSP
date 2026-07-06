@@ -19,6 +19,13 @@ Nothing bypasses the dual-branch architecture — every prediction flows
 through a branch. Instance normalization (RevIN-style) makes the model robust
 to distribution shift.
 
+With `model.channel_mixer_layers > 0` (default 1), each branch also runs a
+**bidirectional Mamba across the variate dimension** (S-Mamba style) before
+its head, so every channel's forecast can exploit the other channels' state —
+the key ingredient separating first-class multivariate models from
+channel-independent ones on electricity/traffic/weather. Set 0 for a strictly
+channel-independent model.
+
 ```
              input window (B, L, C)  --RevIN-->
                  /                    \
@@ -96,11 +103,15 @@ standard long-term forecasting benchmarks:
 | ETTh2 | `configs/ETTh2.yaml` | 7 | 1 h | 17,420 | canonical 12/4/4 mo | 32 | 1e-4 | halve LR, 1 Mamba layer, dropout 0.3, low-pass 0.3 |
 | ETTm1 | `configs/ETTm1.yaml` | 7 | 15 min | 69,680 | canonical 12/4/4 mo | 32 | 1e-4 | halve LR |
 | ETTm2 | `configs/ETTm2.yaml` | 7 | 15 min | 69,680 | canonical 12/4/4 mo | 32 | 1e-4 | halve LR, dropout 0.2, low-pass 0.2 |
-| Weather | `configs/weather.yaml` | 21 | 10 min | 52,696 | 0.7/0.1/0.2 | 32 | 1e-4 | |
-| Electricity | `configs/electricity.yaml` | 321 | 1 h | 26,304 | 0.7/0.1/0.2 | 16 | 5e-4 | |
-| Solar-Energy | `configs/solar.yaml` | 137 | 10 min | 52,560 | 0.7/0.1/0.2 | 16 | 5e-4 | reads `solar_AL.txt` directly |
-| Exchange-Rate | `configs/exchange_rate.yaml` | 8 | 1 day | 7,588 | 0.7/0.1/0.2 | 32 | 1e-4 | d_model 64, dropout 0.3, low-pass 0.5 |
-| Traffic | `configs/traffic.yaml` | 862 | 1 h | 17,544 | 0.7/0.1/0.2 | 8 | 1e-3 | halve batch on OOM |
+| Weather | `configs/weather.yaml` | 21 | 10 min | 52,696 | 0.7/0.1/0.2 | 32 | 1e-4 | halve LR, d_model 256 |
+| Electricity | `configs/electricity.yaml` | 321 | 1 h | 26,304 | 0.7/0.1/0.2 | 16 | 5e-4 | halve LR |
+| Solar-Energy | `configs/solar.yaml` | 137 | 10 min | 52,560 | 0.7/0.1/0.2 | 16 | 5e-4 | halve LR, reads `solar_AL.txt` directly |
+| Exchange-Rate | `configs/exchange_rate.yaml` | 8 | 1 day | 7,588 | 0.7/0.1/0.2 | 32 | 1e-4 | halve LR, d_model 64, dropout 0.3, low-pass 0.5, mixer off |
+| Traffic | `configs/traffic.yaml` | 862 | 1 h | 17,544 | 0.7/0.1/0.2 | 8 | 1e-3 | halve LR, halve batch on OOM |
+
+All configs train 10 epochs with the halve LR schedule and patience 3, and
+enable the cross-channel mixer (`channel_mixer_layers: 1`) except
+Exchange-Rate (near-random-walk; kept channel-independent).
 
 All datasets use `seq_len: 96` — the standard fixed look-back of the
 Autoformer/TimesNet/iTransformer evaluation protocol, kept identical across
@@ -191,6 +202,7 @@ TSP/
 | `model.freq_encoder` | `linear` (default) or `mamba` for the frequency branch |
 | `model.freq_sparsity` | fraction of high frequencies to drop (low-pass) |
 | `model.fusion` | forecast fusion: `gated` (per-channel gate), `concat` (per-step gate), `sum` (average) |
+| `model.channel_mixer_layers` | BiMamba layers across the variate dim (0 = channel-independent) |
 | `train.patience` / `train.min_delta` | early-stopping knobs |
 | `train.amp` | mixed precision (recommended on RTX 5090) |
 | `train.compile` | `torch.compile` (supported on torch 2.11+cu130; opt-in) |
@@ -298,6 +310,19 @@ train falls.** Three causes, all fixed:
    head was random, so half the initial forecast was noise. The gate now
    initializes at g ≈ 0.9 toward the time branch (an exact linear model at
    init) and remains fully learnable.
+
+**Early stop on weather/electricity/traffic; accuracy below first-class
+Mamba models.** The big-dataset configs previously kept the cosine schedule
+with patience 3 — the same mismatch as ETT (val plateaus around epoch 5 while
+cosine still holds the LR high, so patience fires mid-schedule). All configs
+now use the halve recipe. The remaining accuracy gap to S-Mamba-class models
+was architectural: they are **channel-mixing** — each variate's forecast uses
+the other variates' state — while this model was strictly
+channel-independent. `model.channel_mixer_layers` (default 1) adds a
+bidirectional Mamba over the variate dimension inside each branch before its
+head, plus a whole-window series embedding in the time branch. This is where
+first-class models earn their margin on electricity (321 ch), traffic
+(862 ch), and weather (21 ch); expect the largest gains there.
 
 ## Tests
 

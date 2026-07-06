@@ -33,12 +33,13 @@ model:
   freq_dropout: 0.1
   freq_sparsity: 0.0
   freq_encoder: linear
+  channel_mixer_layers: 1  # BiMamba across variates (S-Mamba style)
   fusion: gated
   head_dropout: 0.1
 
 train:
   device: auto
-  epochs: 20
+  epochs: 10
   batch_size: 16
   lr: 0.0005
   weight_decay: 0.0001
@@ -47,5 +48,5 @@ train:
   num_workers: 4
   patience: 3
   amp: true
-  lr_scheduler: cosine
+  lr_scheduler: halve      # lr *= 0.5 each epoch; converges before patience can misfire
   compile: false

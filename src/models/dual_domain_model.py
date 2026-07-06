@@ -20,9 +20,12 @@ The time branch carries a DLinear-style linear backbone internally (critical
 on benchmarks like ETT), with its deep head zero-initialized so training
 starts from an exact linear forecaster and learns corrections.
 
-The model is channel-independent: every variable/channel shares the same
-weights and is processed independently, which is a strong, robust baseline for
-multivariate long-horizon forecasting.
+Per-channel processing shares weights across variables. With
+``channel_mixer_layers > 0`` (default 1), each branch additionally runs a
+bidirectional Mamba across the *variate* dimension (S-Mamba style) before its
+head, so forecasts can exploit cross-channel dependencies — the main edge of
+first-class multivariate models on benchmarks like electricity and weather.
+Set it to 0 for a strictly channel-independent model.
 """
 from __future__ import annotations
 
@@ -55,6 +58,7 @@ class DualDomainForecaster(nn.Module):
         freq_encoder: str = "linear",
         fusion: str = "gated",
         head_dropout: float = 0.1,
+        channel_mixer_layers: int = 1,
     ):
         super().__init__()
         self.seq_len = seq_len
@@ -74,6 +78,7 @@ class DualDomainForecaster(nn.Module):
             mamba_d_conv=mamba_d_conv,
             mamba_expand=mamba_expand,
             use_official_mamba=use_official_mamba,
+            channel_mixer_layers=channel_mixer_layers,
         )
         self.freq_branch = FreqBranch(
             seq_len=seq_len,
@@ -89,6 +94,7 @@ class DualDomainForecaster(nn.Module):
             mamba_d_conv=mamba_d_conv,
             mamba_expand=mamba_expand,
             use_official_mamba=use_official_mamba,
+            channel_mixer_layers=channel_mixer_layers,
         )
         self.fusion = ForecastFusion(d_model=d_model, pred_len=pred_len, mode=fusion)
 
@@ -146,4 +152,5 @@ def build_model(cfg: dict, n_channels: int) -> DualDomainForecaster:
         freq_encoder=mcfg.get("freq_encoder", "linear"),
         fusion=mcfg["fusion"],
         head_dropout=mcfg["head_dropout"],
+        channel_mixer_layers=mcfg.get("channel_mixer_layers", 1),
     )

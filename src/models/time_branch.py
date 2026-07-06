@@ -23,7 +23,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from .mamba_block import MambaEncoder
+from .mamba_block import BiMambaEncoder, MambaEncoder
 
 
 class MovingAvg(nn.Module):
@@ -88,6 +88,7 @@ class TimeBranch(nn.Module):
         mamba_d_conv: int = 4,
         mamba_expand: int = 2,
         use_official_mamba: bool = True,
+        channel_mixer_layers: int = 0,
     ):
         super().__init__()
         self.encoder_kind = encoder
@@ -97,7 +98,28 @@ class TimeBranch(nn.Module):
         self.lin_trend = nn.Linear(seq_len, pred_len)
         # Per-timestep embedding of the [seasonal, trend] pair -> d_model.
         self.embed = nn.Linear(2, d_model)
+        # Whole-window embedding per variate (S-Mamba-style): gives the
+        # feature a direct global view instead of relying on the encoder's
+        # last state alone.
+        self.series_embed = nn.Linear(seq_len, d_model)
         self.dropout = nn.Dropout(dropout)
+        # Optional cross-channel mixing: a bidirectional Mamba over the
+        # variate dimension (channel order is arbitrary -> bidirectional),
+        # letting each channel's forecast use the other channels' state.
+        # Channel-independent models leave this accuracy on the table on
+        # multivariate benchmarks (electricity, traffic, weather).
+        self.channel_mixer = (
+            BiMambaEncoder(
+                d_model=d_model,
+                n_layers=channel_mixer_layers,
+                d_state=mamba_d_state,
+                d_conv=mamba_d_conv,
+                expand=mamba_expand,
+                use_official=use_official_mamba,
+            )
+            if channel_mixer_layers > 0
+            else None
+        )
         # Correction head on top of the encoder feature; zero-initialized so
         # the branch's initial forecast is exactly the linear backbone.
         self.head = nn.Sequential(
@@ -156,5 +178,8 @@ class TimeBranch(nn.Module):
             summary = h.mean(dim=1)                      # (B*C, D)
 
         feat = summary.reshape(b, c, -1)                 # (B, C, d_model)
+        feat = feat + self.series_embed(x.transpose(1, 2))  # global window view
+        if self.channel_mixer is not None:
+            feat = self.channel_mixer(feat)              # mix across variates
         y = y_lin + self.head(feat)                      # (B, C, H)
         return feat, y
