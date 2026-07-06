@@ -53,10 +53,14 @@ def test_bimamba_encoder_bidirectional():
 
 
 def test_freq_branch_mamba_shape():
-    b, l, c, d = 4, 96, 7, 32
+    b, l, h, c, d = 4, 96, 24, 7, 32
     x = torch.randn(b, l, c)
-    branch = FreqBranch(seq_len=l, d_model=d, encoder="mamba", use_official_mamba=False)
-    assert branch(x).shape == (b, c, d)
+    branch = FreqBranch(
+        seq_len=l, pred_len=h, d_model=d, encoder="mamba", use_official_mamba=False
+    )
+    feat, y = branch(x)
+    assert feat.shape == (b, c, d)
+    assert y.shape == (b, c, h)
 
 
 def test_model_freq_mamba_forward():
@@ -70,26 +74,30 @@ def test_model_freq_mamba_forward():
 
 
 def test_time_branch_shape():
-    b, l, c, d = 4, 96, 7, 32
+    b, l, h, c, d = 4, 96, 24, 7, 32
     x = torch.randn(b, l, c)
-    branch = TimeBranch(seq_len=l, d_model=d, use_official_mamba=False)
-    out = branch(x)
-    assert out.shape == (b, c, d)
+    branch = TimeBranch(seq_len=l, pred_len=h, d_model=d, use_official_mamba=False)
+    feat, y = branch(x)
+    assert feat.shape == (b, c, d)
+    assert y.shape == (b, c, h)
 
 
 def test_time_branch_mlp_encoder():
-    b, l, c, d = 4, 96, 7, 32
+    b, l, h, c, d = 4, 96, 24, 7, 32
     x = torch.randn(b, l, c)
-    branch = TimeBranch(seq_len=l, d_model=d, encoder="mlp")
-    assert branch(x).shape == (b, c, d)
+    branch = TimeBranch(seq_len=l, pred_len=h, d_model=d, encoder="mlp")
+    feat, y = branch(x)
+    assert feat.shape == (b, c, d)
+    assert y.shape == (b, c, h)
 
 
 def test_freq_branch_shape():
-    b, l, c, d = 4, 96, 7, 32
+    b, l, h, c, d = 4, 96, 24, 7, 32
     x = torch.randn(b, l, c)
-    branch = FreqBranch(seq_len=l, d_model=d)
-    out = branch(x)
-    assert out.shape == (b, c, d)
+    branch = FreqBranch(seq_len=l, pred_len=h, d_model=d)
+    feat, y = branch(x)
+    assert feat.shape == (b, c, d)
+    assert y.shape == (b, c, h)
 
 
 def test_model_forward_shape():
@@ -110,37 +118,38 @@ def test_fusion_modes():
         assert model(x).shape == (b, h, c)
 
 
-def test_direct_skip_toggle():
+def test_time_branch_init_forecast_is_linear_backbone():
+    """The time branch's correction head is zero-init, so its initial
+    forecast must equal its internal linear (DLinear-style) backbone."""
+    torch.manual_seed(0)
     b, l, h, c = 2, 48, 12, 3
     x = torch.randn(b, l, c)
-    for flag in (True, False):
-        model = DualDomainForecaster(
-            seq_len=l, pred_len=h, n_channels=c, d_model=16, direct_skip=flag
+    branch = TimeBranch(
+        seq_len=l, pred_len=h, d_model=16, use_official_mamba=False
+    ).eval()
+    with torch.no_grad():
+        _, y = branch(x)
+        seasonal, trend = branch.decomp(x)
+        expected = branch.lin_seasonal(seasonal.transpose(1, 2)) + branch.lin_trend(
+            trend.transpose(1, 2)
         )
-        assert model(x).shape == (b, h, c)
+    assert torch.allclose(y, expected, atol=1e-5)
 
 
-def test_direct_skip_starts_as_linear_model():
-    """With direct_skip, the deep head is zero-init: the initial forecast must
-    equal the pure linear-skip forecast (deep path contributes exactly 0)."""
+def test_forecast_is_convex_combination_of_branches():
+    """The output must lie between the two branch forecasts elementwise:
+    no path may bypass the dual branches."""
     torch.manual_seed(0)
     b, l, h, c = 2, 48, 12, 3
     x = torch.randn(b, l, c)
     model = DualDomainForecaster(
-        seq_len=l, pred_len=h, n_channels=c, d_model=16, direct_skip=True
+        seq_len=l, pred_len=h, n_channels=c, d_model=16
     ).eval()
     with torch.no_grad():
-        full = model(x)
-        # Recompute just the linear-skip path.
-        mean = x.mean(dim=1, keepdim=True)
-        std = torch.sqrt(x.var(dim=1, keepdim=True, unbiased=False) + 1e-5)
-        x_norm = (x - mean) / std
-        seasonal, trend = model.direct_decomp(x_norm)
-        direct = model.direct_seasonal(seasonal.transpose(1, 2)) + model.direct_trend(
-            trend.transpose(1, 2)
-        )
-        expected = direct.transpose(1, 2) * std + mean
-    assert torch.allclose(full, expected, atol=1e-5)
+        out, comps = model(x, return_components=True)
+    lo = torch.minimum(comps["time"], comps["freq"])
+    hi = torch.maximum(comps["time"], comps["freq"])
+    assert (out >= lo - 1e-5).all() and (out <= hi + 1e-5).all()
 
 
 def test_mamba_finite_under_autocast():

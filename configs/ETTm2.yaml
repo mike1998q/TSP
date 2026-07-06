@@ -32,7 +32,6 @@ model:
   freq_sparsity: 0.2
   freq_encoder: linear
   fusion: gated
-  direct_skip: true
   head_dropout: 0.2
 
 train:

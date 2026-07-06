@@ -1,15 +1,22 @@
-"""Time-domain branch: series decomposition + a sequence encoder.
+"""Time-domain branch: decomposition, linear backbone, and a sequence encoder.
 
 The branch decomposes the input into a slow-moving trend and a seasonal
-residual (a la Autoformer/DLinear), embeds the two components per timestep,
-then runs a **Mamba** (selective state-space) encoder over the time axis to
-model long-range temporal dynamics. Operating directly on the raw samples lets
-this branch capture local, non-periodic and trend structure that the frequency
-branch (which sees global spectral content) tends to smooth out.
+residual (a la Autoformer/DLinear) and forecasts with two cooperating paths,
+both inside the branch:
+
+1. a *linear backbone* — per-component linear maps from the look-back window
+   straight to the horizon (the DLinear recipe, near-SOTA on ETT-style data);
+2. a **Mamba** (selective state-space) encoder over the time axis whose
+   zero-initialized head adds nonlinear corrections for long-range dynamics.
+
+Operating directly on the raw samples lets this branch capture local,
+non-periodic and trend structure that the frequency branch (which sees global
+spectral content) tends to smooth out.
 
 The encoder is selectable via ``encoder={mamba, mlp}``; Mamba is the default.
 Processing is channel-independent: every variable is encoded with shared
-weights and summarized to a per-channel feature of width ``d_model``.
+weights. The branch returns both its forecast and a per-channel feature used
+by the fusion gate.
 """
 from __future__ import annotations
 
@@ -53,18 +60,28 @@ class SeriesDecomp(nn.Module):
 
 
 class TimeBranch(nn.Module):
-    """Encode a look-back window into a per-channel feature of size d_model.
+    """Produce a time-domain forecast and a per-channel feature.
+
+    The branch owns a complete forecasting path: a *linear backbone*
+    (DLinear-style per-component maps from the look-back window straight to
+    the horizon — decomposition + linear projection is the canonical
+    time-domain model) plus a Mamba/MLP encoder whose zero-initialized head
+    adds a learned nonlinear correction. Training therefore starts from an
+    exact linear forecaster, but the full prediction is computed *inside*
+    this branch — there is no path around the branch.
 
     Input:  (B, L, C)
-    Output: (B, C, d_model)
+    Output: (feature (B, C, d_model), forecast (B, C, pred_len))
     """
 
     def __init__(
         self,
         seq_len: int,
+        pred_len: int,
         d_model: int,
         kernel_size: int = 25,
         dropout: float = 0.1,
+        head_dropout: float = 0.1,
         encoder: str = "mamba",
         mamba_layers: int = 2,
         mamba_d_state: int = 16,
@@ -75,9 +92,21 @@ class TimeBranch(nn.Module):
         super().__init__()
         self.encoder_kind = encoder
         self.decomp = SeriesDecomp(kernel_size)
+        # Linear backbone: per-component window -> horizon maps.
+        self.lin_seasonal = nn.Linear(seq_len, pred_len)
+        self.lin_trend = nn.Linear(seq_len, pred_len)
         # Per-timestep embedding of the [seasonal, trend] pair -> d_model.
         self.embed = nn.Linear(2, d_model)
         self.dropout = nn.Dropout(dropout)
+        # Correction head on top of the encoder feature; zero-initialized so
+        # the branch's initial forecast is exactly the linear backbone.
+        self.head = nn.Sequential(
+            nn.LayerNorm(d_model),
+            nn.Dropout(head_dropout),
+            nn.Linear(d_model, pred_len),
+        )
+        nn.init.zeros_(self.head[-1].weight)
+        nn.init.zeros_(self.head[-1].bias)
 
         if encoder == "mamba":
             self.encoder = MambaEncoder(
@@ -104,9 +133,15 @@ class TimeBranch(nn.Module):
     def using_official_mamba(self) -> bool:
         return getattr(self.encoder, "using_official_kernels", False)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor):
         b, l, c = x.shape
         seasonal, trend = self.decomp(x)                 # each (B, L, C)
+
+        # Linear backbone forecast.
+        y_lin = self.lin_seasonal(seasonal.transpose(1, 2)) + self.lin_trend(
+            trend.transpose(1, 2)
+        )                                                # (B, C, H)
+
         # Stack components as 2 features per (timestep, channel).
         feats = torch.stack([seasonal, trend], dim=-1)   # (B, L, C, 2)
         # Channel-independent: fold channels into the batch dimension.
@@ -120,4 +155,6 @@ class TimeBranch(nn.Module):
             h = h + self.encoder(h)                      # residual refine
             summary = h.mean(dim=1)                      # (B*C, D)
 
-        return summary.reshape(b, c, -1)                 # (B, C, d_model)
+        feat = summary.reshape(b, c, -1)                 # (B, C, d_model)
+        y = y_lin + self.head(feat)                      # (B, C, H)
+        return feat, y

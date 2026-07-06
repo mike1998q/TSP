@@ -48,8 +48,6 @@ model:
   # Fusion
   fusion: gated              # {gated, sum, concat}
   head_dropout: 0.1
-  direct_skip: true          # DLinear-style linear history->future skip;
-                             # the dual-domain branches learn a correction
 
 train:
   device: auto               # {auto, cuda, cpu}

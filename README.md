@@ -3,28 +3,32 @@
 A PyTorch project for multivariate time series forecasting that processes the
 look-back window through **two parallel branches** and fuses them:
 
-- **Time-domain branch** — series decomposition (trend/seasonal) + a **Mamba**
-  (selective state-space) encoder over the time axis. Captures local, trend,
-  and long-range temporal dynamics with linear-time sequence modeling.
+- **Time-domain branch** — series decomposition (trend/seasonal) with an
+  internal **linear backbone** (DLinear-style window→horizon maps) plus a
+  **Mamba** (selective state-space) encoder whose zero-initialized head adds
+  nonlinear corrections. Captures local, trend, and long-range temporal
+  dynamics.
 - **Frequency-domain branch** — real FFT + a spectral encoder: either a
   learnable complex linear filter (default) or a **bidirectional Mamba**
-  scanned over the frequency bins. Captures global, periodic structure with a
-  full-window receptive field.
+  scanned over the frequency bins, followed by its own forecast head.
+  Captures global, periodic structure with a full-window receptive field.
 
-The two per-channel feature streams are combined with a **gated fusion** and
-mapped to the forecast horizon by a linear head. Instance normalization
-(RevIN-style) makes the model robust to distribution shift.
+**Each branch produces its own forecast**; the output is a gated convex
+combination of the two, with the gate conditioned on both branches' features.
+Nothing bypasses the dual-branch architecture — every prediction flows
+through a branch. Instance normalization (RevIN-style) makes the model robust
+to distribution shift.
 
 ```
-             input window (B, L, C)
-                 /            \
-        TimeBranch          FreqBranch
-   (decomp + Mamba SSM)  (rFFT + spectral filter)
-         (B,C,D)             (B,C,D)
-                 \            /
-                FeatureFusion (gated)
-                        |
-                 linear head  ->  forecast (B, H, C)
+             input window (B, L, C)  --RevIN-->
+                 /                    \
+        TimeBranch                  FreqBranch
+   decomp -> linear backbone     rFFT -> spectral encoder
+   + Mamba correction (0-init)   -> forecast head
+   -> y_time, feat_t             -> y_freq, feat_f
+                 \                    /
+          g = σ(gate(feat_t, feat_f))
+          y = g·y_time + (1−g)·y_freq   ->  forecast (B, H, C)
 ```
 
 ## Environment
@@ -160,9 +164,9 @@ TSP/
 │   ├── data/                   # sliding-window dataset + loaders + scaler
 │   ├── models/
 │   │   ├── mamba_block.py      # pure-torch Mamba SSM (+ optional fast kernels)
-│   │   ├── time_branch.py      # decomposition + Mamba encoder (or MLP)
-│   │   ├── freq_branch.py      # rFFT + complex spectral filter
-│   │   ├── fusion.py           # gated / sum / concat fusion
+│   │   ├── time_branch.py      # decomp + linear backbone + Mamba correction
+│   │   ├── freq_branch.py      # rFFT + spectral encoder + forecast head
+│   │   ├── fusion.py           # forecast-level gated fusion
 │   │   └── dual_domain_model.py# full model + RevIN normalization
 │   ├── utils/                  # metrics, config, seeding, device, plotting
 │   ├── train.py                # training loop (AMP, early stop, cosine LR)
@@ -185,8 +189,7 @@ TSP/
 | `model.time_kernel_size` | moving-average window for trend extraction |
 | `model.freq_encoder` | `linear` (default) or `mamba` for the frequency branch |
 | `model.freq_sparsity` | fraction of high frequencies to drop (low-pass) |
-| `model.fusion` | `gated`, `sum`, or `concat` |
-| `model.direct_skip` | DLinear-style linear history→future skip (default on) |
+| `model.fusion` | forecast fusion: `gated` (per-channel gate), `concat` (per-step gate), `sum` (average) |
 | `train.patience` / `train.min_delta` | early-stopping knobs |
 | `train.amp` | mixed precision (recommended on RTX 5090) |
 | `train.compile` | `torch.compile` (supported on torch 2.11+cu130; opt-in) |
@@ -263,15 +266,18 @@ Two mechanisms used to cause this, both fixed:
 ETT is the benchmark where a plain linear history→future map (DLinear) is
 near-SOTA. The model originally forecast from a pooled `d_model` summary
 alone — an information bottleneck that collapses toward mean-reverting
-predictions on ETT. The model now includes a **direct linear skip**
-(`model.direct_skip: true`, default): per-component (seasonal/trend) linear
-maps from the look-back window straight to the horizon, with the deep
-dual-domain path zero-initialized so it starts as an exact DLinear and learns
-nonlinear *corrections* on top. ETT configs also use `seq_len: 336`, the
-regime where linear-skip models perform best on ETT.
+predictions on ETT. The time-domain branch now carries a **linear backbone
+inside the branch**: per-component (seasonal/trend) linear maps from the
+look-back window straight to the horizon, with the branch's deep head
+zero-initialized so it starts as an exact DLinear and learns nonlinear
+*corrections* on top. Fusion happens at the **forecast level** (a gated
+convex combination of the two branch forecasts), so the linear capability
+strengthens the time branch rather than bypassing the dual-branch
+architecture. ETT configs also use `seq_len: 336`, the regime where
+linear-backbone models perform best on ETT.
 
-Old checkpoints from before the skip was added are incompatible with the new
-`state_dict` — retrain (or set `model.direct_skip: false` to load them).
+Old checkpoints from before this change are incompatible with the new
+`state_dict` — retrain them.
 
 ## Tests
 

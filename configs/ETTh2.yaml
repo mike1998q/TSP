@@ -32,7 +32,6 @@ model:
   freq_sparsity: 0.3         # low-pass: high-freq content is mostly noise here
   freq_encoder: linear
   fusion: gated
-  direct_skip: true
   head_dropout: 0.3
 
 train:

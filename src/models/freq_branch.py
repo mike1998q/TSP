@@ -46,18 +46,20 @@ class ComplexLinear(nn.Module):
 
 
 class FreqBranch(nn.Module):
-    """Encode a look-back window into a per-channel feature of size d_model.
+    """Produce a frequency-domain forecast and a per-channel feature.
 
     Input:  (B, L, C)
-    Output: (B, C, d_model)
+    Output: (feature (B, C, d_model), forecast (B, C, pred_len))
     """
 
     def __init__(
         self,
         seq_len: int,
+        pred_len: int,
         d_model: int,
         freq_hidden: int = 128,
         dropout: float = 0.1,
+        head_dropout: float = 0.1,
         sparsity: float = 0.0,
         encoder: str = "linear",
         mamba_layers: int = 2,
@@ -98,6 +100,11 @@ class FreqBranch(nn.Module):
             raise ValueError(f"Unknown freq encoder: {encoder!r}")
 
         self.norm = nn.LayerNorm(d_model)
+        # Spectral forecast head: this branch's own prediction of the horizon.
+        self.head = nn.Sequential(
+            nn.Dropout(head_dropout),
+            nn.Linear(d_model, pred_len),
+        )
 
     @property
     def using_official_mamba(self) -> bool:
@@ -113,7 +120,7 @@ class FreqBranch(nn.Module):
         mask[:keep] = 1.0
         return mask
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor):
         # x: (B, L, C) -> operate along time (dim=1).
         b, l, c = x.shape
         xc = x.transpose(1, 2)                           # (B, C, L)
@@ -127,13 +134,15 @@ class FreqBranch(nn.Module):
         if self.encoder_kind == "linear":
             yr, yi = self.filter(xr, xi)                 # learned spectral mixing
             feat = torch.cat([yr, yi], dim=-1)           # (B, C, 2*n_freq)
-            feat = self.proj(feat)                       # (B, C, d_model)
-            return self.norm(feat)
+            feat = self.norm(self.proj(feat))            # (B, C, d_model)
+        else:
+            # mamba: bins as a sequence, channel-independent (fold C into batch).
+            bins = torch.stack([xr, xi], dim=-1)         # (B, C, n_freq, 2)
+            bins = bins.reshape(b * c, self.n_freq, 2)   # (B*C, n_freq, 2)
+            h = self.dropout(self.embed(bins))           # (B*C, n_freq, d_model)
+            h = self.encoder(h)                          # bidirectional scan
+            summary = h.mean(dim=1)                      # (B*C, d_model)
+            feat = self.norm(summary.reshape(b, c, -1))  # (B, C, d_model)
 
-        # mamba: bins as a sequence, channel-independent (fold C into batch).
-        bins = torch.stack([xr, xi], dim=-1)             # (B, C, n_freq, 2)
-        bins = bins.reshape(b * c, self.n_freq, 2)       # (B*C, n_freq, 2)
-        h = self.dropout(self.embed(bins))               # (B*C, n_freq, d_model)
-        h = self.encoder(h)                              # bidirectional scan
-        summary = h.mean(dim=1)                          # (B*C, d_model)
-        return self.norm(summary.reshape(b, c, -1))      # (B, C, d_model)
+        y = self.head(feat)                              # (B, C, H)
+        return feat, y

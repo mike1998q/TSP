@@ -2,17 +2,23 @@
 
 Architecture
 ------------
-             input window (B, L, C)
-                 /            \\
-        TimeBranch          FreqBranch
-    (decomp + Mamba SSM)  (rFFT + spectral filter)
-         (B,C,D)             (B,C,D)
-                 \\            /
-                FeatureFusion (gated)
-                     (B,C,D)
+             input window (B, L, C)  --RevIN-->  x_norm
+                 /                       \\
+        TimeBranch                     FreqBranch
+   decomp -> linear backbone       rFFT -> spectral encoder
+   + Mamba correction (0-init)     (linear filter | BiMamba)
+   -> y_time, feat_t               -> y_freq, feat_f
+                 \\                       /
+              ForecastFusion (gate from [feat_t, feat_f])
+              y = g * y_time + (1 - g) * y_freq
                         |
-                 forecast head
-                     (B,C,H)  ->  (B,H,C)
+                 de-normalize  ->  forecast (B, H, C)
+
+Every prediction is produced *inside* a branch and fused as a convex
+combination — there is no path that bypasses the dual-branch architecture.
+The time branch carries a DLinear-style linear backbone internally (critical
+on benchmarks like ETT), with its deep head zero-initialized so training
+starts from an exact linear forecaster and learns corrections.
 
 The model is channel-independent: every variable/channel shares the same
 weights and is processed independently, which is a strong, robust baseline for
@@ -24,8 +30,8 @@ import torch
 import torch.nn as nn
 
 from .freq_branch import FreqBranch
-from .fusion import FeatureFusion
-from .time_branch import SeriesDecomp, TimeBranch
+from .fusion import ForecastFusion
+from .time_branch import TimeBranch
 
 
 class DualDomainForecaster(nn.Module):
@@ -49,7 +55,6 @@ class DualDomainForecaster(nn.Module):
         freq_encoder: str = "linear",
         fusion: str = "gated",
         head_dropout: float = 0.1,
-        direct_skip: bool = True,
     ):
         super().__init__()
         self.seq_len = seq_len
@@ -58,9 +63,11 @@ class DualDomainForecaster(nn.Module):
 
         self.time_branch = TimeBranch(
             seq_len=seq_len,
+            pred_len=pred_len,
             d_model=d_model,
             kernel_size=time_kernel_size,
             dropout=time_dropout,
+            head_dropout=head_dropout,
             encoder=time_encoder,
             mamba_layers=mamba_layers,
             mamba_d_state=mamba_d_state,
@@ -70,9 +77,11 @@ class DualDomainForecaster(nn.Module):
         )
         self.freq_branch = FreqBranch(
             seq_len=seq_len,
+            pred_len=pred_len,
             d_model=d_model,
             freq_hidden=freq_hidden,
             dropout=freq_dropout,
+            head_dropout=head_dropout,
             sparsity=freq_sparsity,
             encoder=freq_encoder,
             mamba_layers=mamba_layers,
@@ -81,57 +90,37 @@ class DualDomainForecaster(nn.Module):
             mamba_expand=mamba_expand,
             use_official_mamba=use_official_mamba,
         )
-        self.fusion = FeatureFusion(d_model=d_model, mode=fusion)
-        self.head = nn.Sequential(
-            nn.LayerNorm(d_model),
-            nn.Dropout(head_dropout),
-            nn.Linear(d_model, pred_len),
-        )
+        self.fusion = ForecastFusion(d_model=d_model, pred_len=pred_len, mode=fusion)
 
-        # DLinear-style direct linear skip: per-component linear maps from the
-        # look-back window straight to the horizon. On benchmarks like ETT a
-        # plain linear history->future map is a near-SOTA baseline; without
-        # it, forecasting from a pooled d_model summary alone collapses toward
-        # mean-reverting predictions. The deep dual-domain path then learns a
-        # *correction*: its head is zero-initialized so training starts from
-        # exactly the linear forecast and adds nonlinearity only as needed.
-        self.direct_skip = direct_skip
-        if direct_skip:
-            self.direct_decomp = SeriesDecomp(time_kernel_size)
-            self.direct_seasonal = nn.Linear(seq_len, pred_len)
-            self.direct_trend = nn.Linear(seq_len, pred_len)
-            nn.init.zeros_(self.head[-1].weight)
-            nn.init.zeros_(self.head[-1].bias)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, return_components: bool = False
+    ):
         """x: (B, L, C) -> forecast (B, H, C).
 
         We standardize each instance by its own last-window mean/std
         (reversible instance normalization, RevIN-style) to handle
         distribution shift, then undo it on the output.
+
+        With ``return_components=True`` also returns the de-normalized
+        per-branch forecasts and the fusion gate for analysis/ablation.
         """
         # Instance normalization (per sample, per channel).
         mean = x.mean(dim=1, keepdim=True)
         std = torch.sqrt(x.var(dim=1, keepdim=True, unbiased=False) + 1e-5)
         x_norm = (x - mean) / std
 
-        time_feat = self.time_branch(x_norm)   # (B, C, D)
-        freq_feat = self.freq_branch(x_norm)    # (B, C, D)
-        fused = self.fusion(time_feat, freq_feat)  # (B, C, D)
+        time_feat, y_time = self.time_branch(x_norm)   # (B,C,D), (B,C,H)
+        freq_feat, y_freq = self.freq_branch(x_norm)   # (B,C,D), (B,C,H)
+        y = self.fusion(time_feat, freq_feat, y_time, y_freq)  # (B,C,H)
 
-        out = self.head(fused)                  # (B, C, H)
-        out = out.transpose(1, 2)               # (B, H, C)
-
-        if self.direct_skip:
-            seasonal, trend = self.direct_decomp(x_norm)          # (B, L, C)
-            direct = self.direct_seasonal(seasonal.transpose(1, 2)) + self.direct_trend(
-                trend.transpose(1, 2)
-            )                                                     # (B, C, H)
-            out = out + direct.transpose(1, 2)                    # (B, H, C)
-
-        # De-normalize.
-        out = out * std + mean
-        return out
+        out = y.transpose(1, 2) * std + mean           # (B, H, C)
+        if not return_components:
+            return out
+        components = {
+            "time": y_time.transpose(1, 2) * std + mean,
+            "freq": y_freq.transpose(1, 2) * std + mean,
+        }
+        return out, components
 
 
 def build_model(cfg: dict, n_channels: int) -> DualDomainForecaster:
@@ -157,5 +146,4 @@ def build_model(cfg: dict, n_channels: int) -> DualDomainForecaster:
         freq_encoder=mcfg.get("freq_encoder", "linear"),
         fusion=mcfg["fusion"],
         head_dropout=mcfg["head_dropout"],
-        direct_skip=mcfg.get("direct_skip", True),
     )
