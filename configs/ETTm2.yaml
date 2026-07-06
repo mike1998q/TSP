@@ -11,7 +11,7 @@ data:
   source: csv
   csv_path: data/ETTm2.csv
   target_columns: null
-  seq_len: 336
+  seq_len: 96
   pred_len: 96
   train_ratio: 0.6
   val_ratio: 0.2

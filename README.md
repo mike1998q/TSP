@@ -102,8 +102,9 @@ standard long-term forecasting benchmarks:
 | Exchange-Rate | `configs/exchange_rate.yaml` | 8 | 1 day | 7,588 | 0.7/0.1/0.2 | 32 | 1e-4 | d_model 64, dropout 0.3, low-pass 0.5 |
 | Traffic | `configs/traffic.yaml` | 862 | 1 h | 17,544 | 0.7/0.1/0.2 | 8 | 1e-3 | halve batch on OOM |
 
-ETT configs use `seq_len: 336` (the regime where the linear skip shines on
-ETT); the others use `seq_len: 96`. All default to `pred_len: 96`; the standard horizons
+All datasets use `seq_len: 96` — the standard fixed look-back of the
+Autoformer/TimesNet/iTransformer evaluation protocol, kept identical across
+datasets for fair comparison — and default to `pred_len: 96`; the standard horizons
 {96, 192, 336, 720} are a CLI override away. Batch sizes are sized for a
 32 GB RTX 5090 given the channel-independent folding (effective sequences per
 step = `batch_size × channels`).
@@ -141,7 +142,7 @@ timestamp/date and remaining columns are numeric channels:
 python -m src.train \
   --source csv \
   --csv_path data/my_series.csv \
-  --seq_len 336 --pred_len 96
+  --seq_len 96 --pred_len 96
 ```
 
 Or edit `configs/default.yaml`:
@@ -151,7 +152,7 @@ data:
   source: csv
   csv_path: data/my_series.csv
   target_columns: null   # null = all numeric columns
-  seq_len: 336
+  seq_len: 96
   pred_len: 96
 ```
 
@@ -273,8 +274,9 @@ zero-initialized so it starts as an exact DLinear and learns nonlinear
 *corrections* on top. Fusion happens at the **forecast level** (a gated
 convex combination of the two branch forecasts), so the linear capability
 strengthens the time branch rather than bypassing the dual-branch
-architecture. ETT configs also use `seq_len: 336`, the regime where
-linear-backbone models perform best on ETT.
+architecture. All configs keep the protocol-standard `seq_len: 96` for fair
+comparison; if you don't need protocol comparability, linear-backbone models
+often gain further on ETT from a longer look-back (`--seq_len 336`).
 
 Old checkpoints from before this change are incompatible with the new
 `state_dict` — retrain them.
