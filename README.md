@@ -107,7 +107,7 @@ standard long-term forecasting benchmarks:
 | ETTh2 | `configs/ETTh2.yaml` | 7 | 1 h | 17,420 | canonical 12/4/4 mo | 32 | 1e-4 | halve LR, 1 Mamba layer, dropout 0.3, low-pass 0.3, mixer off |
 | ETTm1 | `configs/ETTm1.yaml` | 7 | 15 min | 69,680 | canonical 12/4/4 mo | 32 | 1e-4 | halve LR, mixer off |
 | ETTm2 | `configs/ETTm2.yaml` | 7 | 15 min | 69,680 | canonical 12/4/4 mo | 32 | 1e-4 | halve LR, dropout 0.2, low-pass 0.2, mixer off |
-| Weather | `configs/weather.yaml` | 21 | 10 min | 52,696 | 0.7/0.1/0.2 | 32 | 1e-4 | halve LR, d_model 256 |
+| Weather | `configs/weather.yaml` | 21 | 10 min | 52,696 | 0.7/0.1/0.2 | 32 | 1e-4 | halve LR, d_model 256, MLP time + 2 variate-Mamba layers, FITS (~5M params) |
 | Electricity | `configs/electricity.yaml` | 321 | 1 h | 26,304 | 0.7/0.1/0.2 | 16 | 5e-4 | halve LR, d_model 512, MLP time + 2 variate-Mamba layers |
 | Solar-Energy | `configs/solar.yaml` | 137 | 10 min | 52,560 | 0.7/0.1/0.2 | 16 | 5e-4 | halve LR, reads `solar_AL.txt` directly |
 | Exchange-Rate | `configs/exchange_rate.yaml` | 8 | 1 day | 7,588 | 0.7/0.1/0.2 | 32 | 1e-4 | halve LR, d_model 64, dropout 0.3, low-pass 0.5, mixer off |
@@ -357,9 +357,10 @@ failure modes, both observed:
   `freq_sparsity` as its low-pass cutoff) — on ETTh, linear-in-frequency is
   what actually works, and the branch previously had no linear anchor. Both
   branches now start as exact linear forecasters in their own domain.
-- *Weather* — moved to the high-channel recipe (d_model 512, MLP time
-  encoder, 2 variate-mixer layers) plus the FITS backbone; it had been left
-  a generation behind at d256/1-layer.
+- *Weather* — moved to the high-channel recipe *shape* (MLP time encoder,
+  2 variate-mixer layers, FITS backbone) but sized to the dataset:
+  `d_model: 256` (~5M params). The full d512/19M width is justified for
+  321/862 variates, not 21 — capacity must scale with the channel count.
 - *Electricity/traffic* — `mamba_d_state: 32` (richer per-variate SSM state)
   and dropout wired into the mixer FFNs; capacity was already right.
 - *ETTm1/ETTm2* — untouched: they already perform well, and `freq_backbone`

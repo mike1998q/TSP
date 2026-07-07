@@ -19,7 +19,7 @@ data:
   scale: true
 
 model:
-  d_model: 512               # top-model capacity
+  d_model: 256               # sized to 21 variates / 37K windows
   time_kernel_size: 25
   time_dropout: 0.1
   time_encoder: mlp          # S-Mamba recipe: MLP over time,
@@ -29,7 +29,7 @@ model:
   mamba_d_conv: 4
   mamba_expand: 2
   use_official_mamba: true
-  freq_hidden: 512
+  freq_hidden: 256
   freq_dropout: 0.1
   freq_sparsity: 0.0
   freq_encoder: linear
