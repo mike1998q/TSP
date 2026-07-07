@@ -25,7 +25,7 @@ model:
   time_encoder: mlp          # S-Mamba recipe: linear/MLP over time,
                              # Mamba over variates (memory-scalable)
   mamba_layers: 2
-  mamba_d_state: 16
+  mamba_d_state: 32          # richer state for many variates
   mamba_d_conv: 4
   mamba_expand: 2
   use_official_mamba: true

@@ -68,12 +68,33 @@ class FreqBranch(nn.Module):
         mamba_expand: int = 2,
         use_official_mamba: bool = True,
         channel_mixer_layers: int = 0,
+        backbone: str = "none",
     ):
         super().__init__()
         self.seq_len = seq_len
+        self.pred_len = pred_len
         self.n_freq = seq_len // 2 + 1  # rFFT output length
         self.sparsity = float(sparsity)
         self.encoder_kind = encoder
+
+        # Optional FITS-style spectral linear backbone: a complex linear map
+        # that interpolates the (low-passed) spectrum of the length-L window
+        # up to the spectrum of a length-(L+H) window, then inverts it and
+        # reads off the last H samples. Linear-in-frequency forecasting of
+        # this form is near-SOTA on ETTh/weather, giving this branch a strong
+        # linear anchor exactly like the time branch's DLinear backbone.
+        # Zero-initialized (together with the deep head) so the branch starts
+        # silent and learns its contribution instead of injecting noise.
+        if backbone == "fits":
+            self.n_out_freq = (seq_len + pred_len) // 2 + 1
+            self.spec_backbone = ComplexLinear(self.n_freq, self.n_out_freq)
+            for lin in (self.spec_backbone.wr, self.spec_backbone.wi):
+                nn.init.zeros_(lin.weight)
+                nn.init.zeros_(lin.bias)
+        elif backbone == "none":
+            self.spec_backbone = None
+        else:
+            raise ValueError(f"Unknown freq backbone: {backbone!r}")
 
         if encoder == "linear":
             # Complex spectral filter that densely mixes frequency bins.
@@ -111,6 +132,7 @@ class FreqBranch(nn.Module):
                 d_conv=mamba_d_conv,
                 expand=mamba_expand,
                 use_official=use_official_mamba,
+                ffn_dropout=dropout,
             )
             if channel_mixer_layers > 0
             else None
@@ -120,6 +142,12 @@ class FreqBranch(nn.Module):
             nn.Dropout(head_dropout),
             nn.Linear(d_model, pred_len),
         )
+        if self.spec_backbone is not None:
+            # With a linear backbone present, the deep head becomes a
+            # correction: zero-init so the branch starts as pure-linear
+            # (mirroring the time branch's initialization).
+            nn.init.zeros_(self.head[-1].weight)
+            nn.init.zeros_(self.head[-1].bias)
 
     @property
     def using_official_mamba(self) -> bool:
@@ -162,4 +190,16 @@ class FreqBranch(nn.Module):
         if self.channel_mixer is not None:
             feat = self.channel_mixer(feat)              # mix across variates
         y = self.head(feat)                              # (B, C, H)
+
+        if self.spec_backbone is not None:
+            # FITS-style linear forecast: upsample the spectrum to length
+            # L+H, invert, and take the horizon part.
+            br, bi = self.spec_backbone(xr, xi)          # (B, C, n_out_freq)
+            full = torch.fft.irfft(
+                torch.complex(br.float(), bi.float()),
+                n=self.seq_len + self.pred_len,
+                dim=-1,
+                norm="ortho",
+            )
+            y = y + full[..., self.seq_len :].to(y.dtype)  # (B, C, H)
         return feat, y

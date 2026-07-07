@@ -48,6 +48,8 @@ model:
                              #   linear: dense complex filter over bins (cheap baseline)
                              #   mamba:  bidirectional selective SSM over bins
                              #           (reuses the mamba_* settings below)
+  freq_backbone: none        # {none, fits}. fits = FITS-style spectral linear
+                             # forecast backbone in the freq branch (zero-init)
   channel_mixer_layers: 1    # >0: BiMamba across the variate dim in each
                              # branch (cross-channel dependencies); 0 = off
   # Fusion

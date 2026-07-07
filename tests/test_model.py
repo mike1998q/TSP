@@ -152,6 +152,36 @@ def test_forecast_is_convex_combination_of_branches():
     assert (out >= lo - 1e-5).all() and (out <= hi + 1e-5).all()
 
 
+def test_fits_backbone_shapes_and_silent_init():
+    """With the FITS spectral backbone, the freq branch must (a) keep its
+    output contract and (b) start silent: backbone and head are zero-init,
+    so the initial branch forecast is exactly zero."""
+    b, l, h, c, d = 2, 96, 24, 5, 32
+    x = torch.randn(b, l, c)
+    branch = FreqBranch(seq_len=l, pred_len=h, d_model=d, backbone="fits").eval()
+    with torch.no_grad():
+        feat, y = branch(x)
+    assert feat.shape == (b, c, d)
+    assert y.shape == (b, c, h)
+    assert y.abs().max().item() == 0.0
+
+
+def test_fits_model_forward_and_gradients():
+    torch.manual_seed(0)
+    b, l, h, c = 2, 48, 12, 3
+    x = torch.randn(b, l, c)
+    model = DualDomainForecaster(
+        seq_len=l, pred_len=h, n_channels=c, d_model=16,
+        freq_backbone="fits", channel_mixer_layers=0,
+    )
+    out = model(x)
+    assert out.shape == (b, h, c)
+    # The zero-init spectral backbone must still receive gradients.
+    out.sum().backward()
+    g = model.freq_branch.spec_backbone.wr.weight.grad
+    assert g is not None and g.abs().sum() > 0
+
+
 def test_channel_mixer_cross_channel_flow():
     """With the mixer, perturbing one channel must influence another
     channel's forecast; without it, channels must stay fully independent."""

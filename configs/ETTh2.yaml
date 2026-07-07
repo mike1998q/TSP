@@ -32,6 +32,8 @@ model:
   freq_dropout: 0.3
   freq_sparsity: 0.3         # low-pass: high-freq content is mostly noise here
   freq_encoder: linear
+  freq_backbone: fits        # FITS-style spectral linear forecast
+                             # (linear-in-frequency is near-SOTA on ETTh)
   channel_mixer_layers: 0  # OFF: 7 channels + tiny train set -> the mixer
                            # only adds overfitting capacity on ETT
   fusion: gated
@@ -41,7 +43,7 @@ train:
   device: auto
   epochs: 10
   batch_size: 32
-  lr: 0.0001
+  lr: 0.0005                 # linear backbones need a real LR to converge
   weight_decay: 0.0005
   loss: mse
   grad_clip: 5.0

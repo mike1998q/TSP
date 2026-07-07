@@ -116,6 +116,7 @@ class TimeBranch(nn.Module):
                 d_conv=mamba_d_conv,
                 expand=mamba_expand,
                 use_official=use_official_mamba,
+                ffn_dropout=dropout,
             )
             if channel_mixer_layers > 0
             else None

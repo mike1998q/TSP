@@ -11,6 +11,10 @@ look-back window through **two parallel branches** and fuses them:
 - **Frequency-domain branch** — real FFT + a spectral encoder: either a
   learnable complex linear filter (default) or a **bidirectional Mamba**
   scanned over the frequency bins, followed by its own forecast head.
+  Optionally anchored by a **FITS-style spectral linear backbone**
+  (`freq_backbone: fits`): a zero-initialized complex linear map that
+  interpolates the low-passed spectrum to length L+H and reads off the
+  horizon — linear-in-frequency forecasting, near-SOTA on ETTh/weather.
   Captures global, periodic structure with a full-window receptive field.
 
 **Each branch produces its own forecast**; the output is a gated convex
@@ -205,6 +209,7 @@ TSP/
 | `model.freq_sparsity` | fraction of high frequencies to drop (low-pass) |
 | `model.fusion` | forecast fusion: `gated` (per-channel gate), `concat` (per-step gate), `sum` (average) |
 | `model.channel_mixer_layers` | BiMamba layers across the variate dim (0 = channel-independent) |
+| `model.freq_backbone` | `none` or `fits` (spectral linear forecast anchor, zero-init) |
 | `train.patience` / `train.min_delta` | early-stopping knobs |
 | `train.amp` | mixed precision (recommended on RTX 5090) |
 | `train.compile` | `torch.compile` (supported on torch 2.11+cu130; opt-in) |
@@ -342,6 +347,23 @@ failure modes, both observed:
   in the variate dimension** — `time_encoder: mlp`, `d_model: 512`,
   `channel_mixer_layers: 2` (~19M params), traffic batch 16. The Mamba scan
   over 321/862 variate tokens is cheap; the model scales to top-model width.
+
+**Closing the remaining gap to top-level models (per dataset group):**
+
+- *ETTh1/ETTh2* — two fixes: (1) the linear backbones were **undertrained**:
+  lr 1e-4 under the halve schedule integrates to ~2 effective epochs, while
+  DLinear-class linear maps train at 50x that; ETTh lr is now 5e-4. (2) The
+  freq branch gained the **FITS backbone** (`freq_backbone: fits` +
+  `freq_sparsity` as its low-pass cutoff) — on ETTh, linear-in-frequency is
+  what actually works, and the branch previously had no linear anchor. Both
+  branches now start as exact linear forecasters in their own domain.
+- *Weather* — moved to the high-channel recipe (d_model 512, MLP time
+  encoder, 2 variate-mixer layers) plus the FITS backbone; it had been left
+  a generation behind at d256/1-layer.
+- *Electricity/traffic* — `mamba_d_state: 32` (richer per-variate SSM state)
+  and dropout wired into the mixer FFNs; capacity was already right.
+- *ETTm1/ETTm2* — untouched: they already perform well, and `freq_backbone`
+  defaults to `none`, so their model is bit-identical to before.
 
 ## Tests
 
