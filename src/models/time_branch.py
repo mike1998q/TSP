@@ -89,9 +89,11 @@ class TimeBranch(nn.Module):
         mamba_expand: int = 2,
         use_official_mamba: bool = True,
         channel_mixer_layers: int = 0,
+        use_linear_backbone: bool = True,
     ):
         super().__init__()
         self.encoder_kind = encoder
+        self.use_linear_backbone = use_linear_backbone
         self.decomp = SeriesDecomp(kernel_size)
         # Linear backbone: per-component window -> horizon maps.
         self.lin_seasonal = nn.Linear(seq_len, pred_len)
@@ -182,5 +184,7 @@ class TimeBranch(nn.Module):
         feat = feat + self.series_embed(x.transpose(1, 2))  # global window view
         if self.channel_mixer is not None:
             feat = self.channel_mixer(feat)              # mix across variates
-        y = y_lin + self.head(feat)                      # (B, C, H)
+        y = self.head(feat)                              # (B, C, H)
+        if self.use_linear_backbone:
+            y = y + y_lin
         return feat, y

@@ -60,8 +60,11 @@ class DualDomainForecaster(nn.Module):
         fusion: str = "gated",
         head_dropout: float = 0.1,
         channel_mixer_layers: int = 1,
+        use_revin: bool = True,
+        time_linear_backbone: bool = True,
     ):
         super().__init__()
+        self.use_revin = use_revin
         self.seq_len = seq_len
         self.pred_len = pred_len
         self.n_channels = n_channels
@@ -80,6 +83,7 @@ class DualDomainForecaster(nn.Module):
             mamba_expand=mamba_expand,
             use_official_mamba=use_official_mamba,
             channel_mixer_layers=channel_mixer_layers,
+            use_linear_backbone=time_linear_backbone,
         )
         self.freq_branch = FreqBranch(
             seq_len=seq_len,
@@ -113,9 +117,14 @@ class DualDomainForecaster(nn.Module):
         per-branch forecasts and the fusion gate for analysis/ablation.
         """
         # Instance normalization (per sample, per channel).
-        mean = x.mean(dim=1, keepdim=True)
-        std = torch.sqrt(x.var(dim=1, keepdim=True, unbiased=False) + 1e-5)
-        x_norm = (x - mean) / std
+        if self.use_revin:
+            mean = x.mean(dim=1, keepdim=True)
+            std = torch.sqrt(x.var(dim=1, keepdim=True, unbiased=False) + 1e-5)
+            x_norm = (x - mean) / std
+        else:
+            mean = torch.zeros_like(x[:, :1])
+            std = torch.ones_like(x[:, :1])
+            x_norm = x
 
         time_feat, y_time = self.time_branch(x_norm)   # (B,C,D), (B,C,H)
         freq_feat, y_freq = self.freq_branch(x_norm)   # (B,C,D), (B,C,H)
@@ -156,4 +165,6 @@ def build_model(cfg: dict, n_channels: int) -> DualDomainForecaster:
         fusion=mcfg["fusion"],
         head_dropout=mcfg["head_dropout"],
         channel_mixer_layers=mcfg.get("channel_mixer_layers", 1),
+        use_revin=mcfg.get("use_revin", True),
+        time_linear_backbone=mcfg.get("time_linear_backbone", True),
     )

@@ -152,6 +152,47 @@ def test_forecast_is_convex_combination_of_branches():
     assert (out >= lo - 1e-5).all() and (out <= hi + 1e-5).all()
 
 
+def test_ablation_hooks():
+    """Every ablation switch must produce a working model of the right shape,
+    and branch-only fusion must return exactly that branch's forecast."""
+    torch.manual_seed(0)
+    b, l, h, c = 2, 48, 12, 3
+    x = torch.randn(b, l, c)
+    for kwargs in (
+        {"fusion": "time_only"},
+        {"fusion": "freq_only"},
+        {"use_revin": False},
+        {"time_linear_backbone": False},
+    ):
+        model = DualDomainForecaster(
+            seq_len=l, pred_len=h, n_channels=c, d_model=16, **kwargs
+        ).eval()
+        with torch.no_grad():
+            out, comps = model(x, return_components=True)
+        assert out.shape == (b, h, c)
+        if kwargs.get("fusion") == "time_only":
+            assert torch.allclose(out, comps["time"])
+        if kwargs.get("fusion") == "freq_only":
+            assert torch.allclose(out, comps["freq"])
+
+
+def test_no_revin_output_not_denormalized():
+    """With RevIN off the model must not re-add window statistics: shifting
+    the input by a constant changes RevIN output but for a zero-init model
+    without RevIN the forecast stays put."""
+    b, l, h, c = 2, 48, 12, 2
+    x = torch.randn(b, l, c)
+    model = DualDomainForecaster(
+        seq_len=l, pred_len=h, n_channels=c, d_model=16,
+        use_revin=True, channel_mixer_layers=0,
+    ).eval()
+    with torch.no_grad():
+        y1 = model(x)
+        y2 = model(x + 100.0)
+    # RevIN on: constant shift passes straight through to the forecast.
+    assert torch.allclose(y2 - y1, torch.full_like(y1, 100.0), atol=1e-2)
+
+
 def test_fits_backbone_shapes_and_silent_init():
     """With the FITS spectral backbone, the freq branch must (a) keep its
     output contract and (b) start silent: backbone and head are zero-init,

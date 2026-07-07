@@ -16,10 +16,12 @@ class ForecastFusion(nn.Module):
 
     Modes
     -----
-    gated  : per-channel scalar gate g = sigmoid(MLP([feat_t, feat_f])),
-             y = g * y_time + (1 - g) * y_freq.
-    concat : like gated, but the gate is per-horizon-step (finer control).
-    sum    : plain average of the two forecasts (no parameters).
+    gated     : per-channel scalar gate g = sigmoid(MLP([feat_t, feat_f])),
+                y = g * y_time + (1 - g) * y_freq.
+    concat    : like gated, but the gate is per-horizon-step (finer control).
+    sum       : plain average of the two forecasts (no parameters).
+    time_only : return the time-branch forecast (ablation: no freq branch).
+    freq_only : return the freq-branch forecast (ablation: no time branch).
 
     Gate initialization: weights are zeroed and the bias set to +2.2, so the
     initial gate is a constant g ~ 0.9 favoring the time branch. At init the
@@ -50,7 +52,7 @@ class ForecastFusion(nn.Module):
             )
             nn.init.zeros_(self.gate[0].weight)
             nn.init.constant_(self.gate[0].bias, self.GATE_BIAS_INIT)
-        elif mode == "sum":
+        elif mode in ("sum", "time_only", "freq_only"):
             pass
         else:
             raise ValueError(f"Unknown fusion mode: {mode!r}")
@@ -62,6 +64,10 @@ class ForecastFusion(nn.Module):
         time_forecast: torch.Tensor,
         freq_forecast: torch.Tensor,
     ) -> torch.Tensor:
+        if self.mode == "time_only":
+            return time_forecast
+        if self.mode == "freq_only":
+            return freq_forecast
         if self.mode == "sum":
             return 0.5 * (time_forecast + freq_forecast)
         g = self.gate(torch.cat([time_feat, freq_feat], dim=-1))  # (B,C,1) or (B,C,H)

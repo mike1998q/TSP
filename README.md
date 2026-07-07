@@ -210,6 +210,7 @@ TSP/
 | `model.fusion` | forecast fusion: `gated` (per-channel gate), `concat` (per-step gate), `sum` (average) |
 | `model.channel_mixer_layers` | BiMamba layers across the variate dim (0 = channel-independent) |
 | `model.freq_backbone` | `none` or `fits` (spectral linear forecast anchor, zero-init) |
+| `model.use_revin` / `model.time_linear_backbone` | ablation switches (default on) |
 | `train.patience` / `train.min_delta` | early-stopping knobs |
 | `train.amp` | mixed precision (recommended on RTX 5090) |
 | `train.compile` | `torch.compile` (supported on torch 2.11+cu130; opt-in) |
@@ -263,6 +264,52 @@ python -m src.train --time_encoder mlp
 
 `src/utils/metrics.py` reports **MSE** and **MAE** on the held-out
 chronological test split (also used for validation/early stopping).
+
+## Ablation studies
+
+`scripts/run_ablation.py` verifies each component's contribution: every
+variant flips exactly **one** switch relative to the dataset's base config
+(same split, schedule, seeds, and all other hyperparameters), so the metric
+delta isolates that component.
+
+| variant | component isolated | question it answers |
+|---|---|---|
+| `full` | — | reference |
+| `time_only` | frequency branch | does the spectral view add accuracy? |
+| `freq_only` | time branch | does the temporal view add accuracy? |
+| `fusion_sum` | learned gate | is the feature-conditioned gate better than averaging? |
+| `no_revin` | instance normalization | does RevIN handle distribution shift? |
+| `no_linear_backbone` | DLinear backbone (time) | is the linear anchor load-bearing? |
+| `no_fits` / `with_fits` | FITS spectral backbone | is linear-in-frequency load-bearing? |
+| `time_mlp` / `time_mamba` | time-axis Mamba | does the selective SSM beat an MLP over time? |
+| `no_channel_mixer` / `with_channel_mixer` | variate Mamba mixing | do cross-channel dependencies matter here? |
+| `freq_mamba` | spectral encoder type | selective vs dense-linear bin mixing |
+
+```bash
+# Full suite on one dataset (auto-selects the variants that apply):
+python scripts/run_ablation.py --config configs/ETTh1.yaml
+
+# 3 seeds for mean +/- std, or a subset of variants:
+python scripts/run_ablation.py --config configs/weather.yaml --seeds 3
+python scripts/run_ablation.py --config configs/electricity.yaml \
+    --variants full no_channel_mixer time_only freq_only
+
+# Any config field can be overridden for all variants (e.g. quick pass):
+python scripts/run_ablation.py --config configs/ETTh1.yaml --epochs 5
+```
+
+Results print as a markdown table (Δmse vs `full`) and are saved to
+`checkpoints/ablation_<name>.json`. Recommended reading of the table:
+`time_only`/`freq_only` quantify the dual-branch claim itself; the paired
+on/off variants quantify each Mamba and each linear anchor. Expected
+signatures: the channel mixer matters on electricity/traffic/weather but not
+ETT; FITS and the linear backbone matter most on ETTh; RevIN matters
+everywhere there is distribution shift (ETT especially). Use `--seeds 3`
+before drawing conclusions — single-seed deltas below ~0.005 MSE are noise.
+
+For a per-sample view of branch contributions, the model also exposes
+`model(x, return_components=True)`, returning the de-normalized per-branch
+forecasts alongside the fused output.
 
 ## Troubleshooting
 
