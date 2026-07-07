@@ -22,8 +22,12 @@ model:
   d_model: 256               # sized to 21 variates / 37K windows
   time_kernel_size: 25
   time_dropout: 0.1
-  time_encoder: mlp          # S-Mamba recipe: MLP over time,
-                             # Mamba capacity in the variate mixer
+  time_encoder: mamba        # weather needs a real sequence model: at 10-min
+                             # sampling the daily cycle (144 samples) exceeds
+                             # seq_len 96, so the freq branch can't capture it
+                             # -- local temporal dynamics carry the accuracy.
+                             # 21 channels x d256 keeps the scan affordable
+                             # (~6-8 GB; halve batch_size if OOM)
   mamba_layers: 2
   mamba_d_state: 16
   mamba_d_conv: 4
@@ -42,7 +46,7 @@ train:
   device: auto
   epochs: 10
   batch_size: 32
-  lr: 0.0001
+  lr: 0.0002                 # more LR-integral for the linear anchors + encoder
   weight_decay: 0.0001
   loss: mse
   grad_clip: 5.0
