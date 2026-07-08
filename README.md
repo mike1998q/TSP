@@ -265,6 +265,27 @@ python -m src.train --time_encoder mlp
 `src/utils/metrics.py` reports **MSE** and **MAE** on the held-out
 chronological test split (also used for validation/early stopping).
 
+## Results
+
+Measured on an RTX 5090 with the shipped per-dataset configs (`seq_len: 96`,
+canonical splits, MSE/MAE on the held-out test set):
+
+| dataset | H=96 | H=192 | H=336 | H=720 | avg |
+|---|---|---|---|---|---|
+| ETTh1 | 0.381/0.397 | 0.429/0.423 | 0.472/0.446 | 0.472/0.468 | **0.439/0.434** |
+| ETTh2 | 0.292/0.345 | 0.368/0.392 | 0.415/0.427 | 0.423/0.442 | **0.375/0.402** |
+| ETTm1 | 0.321/0.359 | 0.366/0.385 | 0.396/0.405 | 0.461/0.443 | **0.386/0.398** |
+| ETTm2 | 0.177/0.260 | 0.241/0.302 | 0.302/0.341 | 0.398/0.397 | **0.280/0.325** |
+| Weather | 0.162/0.207 | 0.212/0.254 | 0.267/0.293 | 0.349/0.347 | **0.248/0.275** |
+| Electricity | 0.140/0.235 | 0.157/0.252 | 0.175/0.271 | 0.203/0.300 | **0.169/0.265** |
+| Traffic | 0.404/0.267 | 0.423/0.275 | 0.443/0.283 | 0.484/0.302 | 0.439/0.282 |
+| Exchange | 0.086/0.206 | 0.179/0.301 | 0.329/0.415 | 0.858/0.699 | **0.363/0.405** |
+| Solar | 0.197/0.242 | 0.228/0.265 | 0.244/0.280 | 0.243/0.281 | **0.228/0.267** |
+
+Versus S-Mamba (same protocol, avg MSE): better on ETTh1 (−0.016), ETTm1
+(−0.012), Solar (−0.012), ETTm2 (−0.008), ETTh2 (−0.006), Exchange (−0.004),
+Weather (−0.003); tied on Electricity (−0.001); behind on Traffic (+0.025).
+
 ## Ablation studies
 
 `scripts/run_ablation.py` verifies each component's contribution: every
