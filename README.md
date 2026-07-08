@@ -109,7 +109,7 @@ standard long-term forecasting benchmarks:
 | ETTm2 | `configs/ETTm2.yaml` | 7 | 15 min | 69,680 | canonical 12/4/4 mo | 32 | 1e-4 | halve LR, dropout 0.2, low-pass 0.2, mixer off |
 | Weather | `configs/weather.yaml` | 21 | 10 min | 52,696 | 0.7/0.1/0.2 | 32 | 2e-4 | halve LR, d_model 256, Mamba time encoder + 2 variate-Mamba layers, FITS (~5.8M params) |
 | Electricity | `configs/electricity.yaml` | 321 | 1 h | 26,304 | 0.7/0.1/0.2 | 16 | 5e-4 | halve LR, d_model 512, MLP time + 2 variate-Mamba layers |
-| Solar-Energy | `configs/solar.yaml` | 137 | 10 min | 52,560 | 0.7/0.1/0.2 | 16 | 5e-4 | halve LR, reads `solar_AL.txt` directly |
+| Solar-Energy | `configs/solar.yaml` | 137 | 10 min | 52,560 | 0.7/0.1/0.2 | 16 | 5e-4 | halve LR, RevIN off (ablation-verified), reads `solar_AL.txt` directly |
 | Exchange-Rate | `configs/exchange_rate.yaml` | 8 | 1 day | 7,588 | 0.7/0.1/0.2 | 32 | 1e-4 | halve LR, d_model 64, dropout 0.3, low-pass 0.5, mixer off |
 | Traffic | `configs/traffic.yaml` | 862 | 1 h | 17,544 | 0.7/0.1/0.2 | 16 | 1e-3 | halve LR, d_model 512, MLP time + 2 variate-Mamba layers |
 
@@ -325,8 +325,17 @@ Results print as a markdown table (Δmse vs `full`) and are saved to
 on/off variants quantify each Mamba and each linear anchor. Expected
 signatures: the channel mixer matters on electricity/traffic/weather but not
 ETT; FITS and the linear backbone matter most on ETTh; RevIN matters
-everywhere there is distribution shift (ETT especially). Use `--seeds 3`
-before drawing conclusions — single-seed deltas below ~0.005 MSE are noise.
+everywhere there is distribution shift (ETT especially) but can *hurt*
+bounded, shift-free data. Use `--seeds 3` before drawing conclusions —
+single-seed deltas below ~0.005 MSE are noise.
+
+Measured example (solar, H=96, single seed): the channel mixer is the top
+contributor (+0.022 MSE when removed), the DLinear backbone and the time
+branch each carry ~+0.012, the learned gate beats averaging (+0.006) — and
+RevIN turned out to **hurt** by 0.016 MSE, so `configs/solar.yaml` now sets
+`use_revin: false` (solar is bounded and zero at night: window statistics
+mostly encode night-fraction, and de-normalization amplifies errors by that
+unstable std). This is exactly the kind of decision the suite is for.
 
 For a per-sample view of branch contributions, the model also exposes
 `model(x, return_components=True)`, returning the de-normalized per-branch

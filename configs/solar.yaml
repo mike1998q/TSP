@@ -34,6 +34,11 @@ model:
   freq_sparsity: 0.0
   freq_encoder: linear
   channel_mixer_layers: 1  # BiMamba across variates (S-Mamba style)
+  use_revin: false           # ablation-verified: instance norm HURTS solar
+                             # (-0.016 MSE @96). Bounded, zero-at-night data
+                             # has no level shift; window mean/std mostly
+                             # encode night-fraction and denormalizing
+                             # amplifies errors by that unstable std.
   fusion: gated
   head_dropout: 0.1
 
