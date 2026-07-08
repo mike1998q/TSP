@@ -111,7 +111,7 @@ standard long-term forecasting benchmarks:
 | Electricity | `configs/electricity.yaml` | 321 | 1 h | 26,304 | 0.7/0.1/0.2 | 16 | 5e-4 | halve LR, d_model 512, MLP time + 2 variate-Mamba layers |
 | Solar-Energy | `configs/solar.yaml` | 137 | 10 min | 52,560 | 0.7/0.1/0.2 | 16 | 5e-4 | halve LR, RevIN off (ablation-verified), reads `solar_AL.txt` directly |
 | Exchange-Rate | `configs/exchange_rate.yaml` | 8 | 1 day | 7,588 | 0.7/0.1/0.2 | 32 | 1e-4 | halve LR, d_model 64, dropout 0.3, low-pass 0.5, mixer off |
-| Traffic | `configs/traffic.yaml` | 862 | 1 h | 17,544 | 0.7/0.1/0.2 | 16 | 1e-3 | halve LR, d_model 512, MLP time + 2 variate-Mamba layers |
+| Traffic | `configs/traffic.yaml` | 862 | 1 h | 17,544 | 0.7/0.1/0.2 | 16 | 1e-3 | halve LR, d_model 512, MLP time + 4 variate-Mamba layers (~38M params) |
 
 All configs train 10 epochs with the halve LR schedule. The cross-channel
 mixer is sized to the dataset: **off** on ETT and Exchange-Rate (few channels,
@@ -336,6 +336,13 @@ RevIN turned out to **hurt** by 0.016 MSE, so `configs/solar.yaml` now sets
 `use_revin: false` (solar is bounded and zero at night: window statistics
 mostly encode night-fraction, and de-normalization amplifies errors by that
 unstable std). This is exactly the kind of decision the suite is for.
+
+Counter-example (traffic, H=96): the same `no_revin` probe **degrades**
+traffic badly (0.405 → 0.505 MSE), so traffic keeps RevIN. The two datasets
+look alike on the surface (both bounded), but solar's night-zeros are
+periodic structure while traffic windows carry real distribution shift
+(weekday/weekend composition, per-sensor levels) that instance
+normalization absorbs. Measure per dataset; don't transfer conclusions.
 
 For a per-sample view of branch contributions, the model also exposes
 `model(x, return_components=True)`, returning the de-normalized per-branch
