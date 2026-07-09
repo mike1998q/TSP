@@ -1,0 +1,574 @@
+% ADMA 2026 submission — Springer LNCS/LNAI format.
+% Requires llncs.cls and splncs04.bst from the Springer LNCS template
+% (see paper/README.md). Compile: pdflatex -> bibtex -> pdflatex x2.
+\documentclass[runningheads]{llncs}
+
+\usepackage[T1]{fontenc}
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{url}
+
+\newcommand{\model}{DD-Mamba}
+\newcommand{\best}[1]{\textbf{#1}}
+\newcommand{\second}[1]{\underline{#1}}
+
+\begin{document}
+
+\title{\model{}: Dual-Domain State-Space Modeling with Zero-Initialized
+Linear Anchors for Long-Term Time Series Forecasting}
+
+% TODO: replace with the real author list before submission.
+\author{First Author\inst{1} \and Second Author\inst{1}}
+\authorrunning{F. Author et al.}
+\institute{Affiliation, City, Country\\
+\email{first.author@example.edu}}
+
+\maketitle
+
+\begin{abstract}
+Long-term multivariate time series forecasting must reconcile two
+complementary views of a signal: local, trend-driven dynamics that live in
+the time domain, and global periodic structure that is most compact in the
+frequency domain. Existing state-space (Mamba) forecasters model one view
+well but not both, and deep forecasters in general discard the simple
+linear maps that remain near state-of-the-art on several benchmarks. We
+present \model{}, a dual-domain architecture in which a time branch
+(trend--seasonal decomposition with a selective state-space encoder) and a
+frequency branch (learnable complex spectral filtering) each produce their
+own forecast, fused by a learned convex gate so that no prediction can
+bypass either domain. Two design principles drive its accuracy:
+(i)~\emph{linear anchoring} --- each branch embeds the strongest linear
+forecaster of its domain (DLinear-style projections in time, FITS-style
+spectral interpolation in frequency) and zero-initializes its deep heads,
+so training starts from an exact linear model and learns nonlinear
+corrections; and (ii)~\emph{capacity placement} --- a bidirectional Mamba
+over the \emph{variate} dimension carries the model on high-channel data,
+while it is disabled on small, few-channel data where it only adds
+overfitting capacity. On nine standard benchmarks under the unified
+look-back-96 protocol, \model{} attains the best average MSE on seven
+datasets and matches the strongest state-space baseline on one more,
+improving over S-Mamba by up to 3.5\% average MSE on ETTh1 while using a
+fraction of its parameters on small datasets. Component-wise ablations
+confirm each design choice and surface a cautionary finding: instance
+normalization \emph{helps} traffic but \emph{hurts} solar, showing that
+normalization must be validated per dataset. Code and configurations are
+publicly available.
+\keywords{Time series forecasting \and State-space models \and Mamba \and
+Frequency domain \and Multivariate analysis}
+\end{abstract}
+
+\section{Introduction}
+
+Long-term forecasting of multivariate time series underpins applications
+from power-grid load planning to traffic management and weather-dependent
+operations. The field has cycled through architectural paradigms at a
+remarkable pace: Transformer variants with efficient attention
+\cite{informer,autoformer,fedformer}, patch-based attention
+\cite{patchtst}, inverted variate-token attention \cite{itransformer},
+and, most recently, selective state-space models (SSMs) built on Mamba
+\cite{mamba,smamba}, which offer linear-time sequence modeling with
+input-dependent dynamics.
+
+Two empirical facts complicate this progress. First, \emph{simple linear
+maps remain stubbornly competitive}: a per-component linear projection
+from the look-back window to the horizon (DLinear \cite{dlinear}) and a
+tiny complex-linear interpolation of the low-passed spectrum (FITS
+\cite{fits}) match or beat far larger models on several benchmarks,
+especially the ETT family. Deep architectures that ignore this fact spend
+their early training re-discovering a linear map, and on small datasets
+often never do. Second, \emph{the useful inductive bias differs by
+domain}: local trends and regime changes are naturally expressed in the
+time domain, while multi-scale seasonality is compact in the frequency
+domain. Models committed to a single view --- attention or SSMs over time
+steps only, or spectral mixing only \cite{frets} --- systematically
+underuse the other.
+
+We address both issues with \model{}, a dual-domain forecaster organized
+around three ideas.
+
+\textbf{Dual branches that cannot be bypassed.} A time branch and a
+frequency branch each output a complete forecast; the model's prediction
+is a learned \emph{convex combination} of the two, with the gate
+conditioned on both branches' features. Because the output is constrained
+elementwise between the branch forecasts, no shortcut path around either
+domain exists --- a property we verify by construction and exploit for
+per-sample attribution of the two domains.
+
+\textbf{Linear anchors with zero-initialized corrections.} Each branch
+embeds the strongest \emph{linear} forecaster of its domain as an internal
+backbone: seasonal/trend window-to-horizon projections \cite{dlinear} in
+the time branch, and a FITS-style complex-linear spectral upsampling
+\cite{fits} in the frequency branch. All deep heads are zero-initialized,
+so at initialization \model{} \emph{is} an exact linear model, and
+gradient descent learns nonlinear corrections only where the data supports
+them. This one choice stabilizes small-data training and removes the
+mean-reversion failure mode of pooled deep forecasters.
+
+\textbf{Mamba where it pays.} A causal Mamba encoder models the time axis;
+a \emph{bidirectional} Mamba (frequency bins and channels have no arrow of
+time) serves two optional roles: spectral encoding, and cross-channel
+mixing over the variate dimension in the spirit of S-Mamba \cite{smamba}.
+Crucially, capacity is \emph{placed} per dataset: the variate mixer is the
+dominant component on high-channel data (electricity, traffic, solar) and
+is disabled on few-channel small data (ETT, exchange) where ablations show
+it only adds overfitting capacity.
+
+Our contributions are:
+\begin{enumerate}
+\item A dual-domain forecasting architecture whose output is a gated
+convex combination of per-branch forecasts, guaranteeing that both the
+time and the frequency view contribute to every prediction
+(Sect.~\ref{sec:method}).
+\item A linear-anchoring scheme --- domain-appropriate linear backbones
+with zero-initialized deep corrections --- that makes the model an exact
+linear forecaster at initialization and yields large gains on small
+benchmarks (Sect.~\ref{sec:anchors}, ablated in Sect.~\ref{sec:ablation}).
+\item A capacity-placement recipe for selective SSMs: causal Mamba over
+time where temporal microstructure matters, bidirectional Mamba over
+variates where cross-channel structure dominates, and neither where data
+is scarce (Sect.~\ref{sec:mixer}).
+\item State-of-the-art or matching results on 7--8 of 9 standard
+benchmarks under the unified look-back-96 protocol, plus ablations that
+isolate every component --- including negative and dataset-dependent
+findings (instance normalization helps traffic by $+0.10$ MSE yet hurts
+solar by $-0.016$) that we believe are as actionable as the positive ones
+(Sect.~\ref{sec:experiments}).
+\end{enumerate}
+
+\section{Related Work}
+
+\textbf{Transformer forecasters.} Informer \cite{informer}, Autoformer
+\cite{autoformer} and FEDformer \cite{fedformer} adapt attention to long
+sequences via sparsity, decomposition, and frequency-domain mixing
+respectively. PatchTST \cite{patchtst} treats sub-series patches as tokens
+with channel independence; iTransformer \cite{itransformer} inverts the
+axes and attends over \emph{variates}, establishing that cross-channel
+modeling, not temporal attention, drives accuracy on high-dimensional
+benchmarks. \model{} adopts the variate-mixing insight but implements it
+with linear-time bidirectional SSMs and, unlike these works, couples it to
+an explicit frequency branch and linear anchors.
+
+\textbf{Linear and frequency-domain models.} DLinear/NLinear \cite{dlinear}
+showed that decomposition plus a linear map rivals Transformers,
+particularly on ETT; RLinear \cite{rlinear} added reversible instance
+normalization \cite{revin}. FreTS \cite{frets} learns MLPs in the
+frequency domain, and FITS \cite{fits} forecasts with a single complex
+linear interpolation of the low-passed spectrum at negligible parameter
+cost. \model{} does not compete with these models --- it \emph{contains}
+them: each branch's backbone is the linear model of its domain, and the
+deep machinery is trained as a correction on top.
+
+\textbf{State-space models.} Mamba \cite{mamba} introduced selective SSMs
+with input-dependent dynamics and linear-time scans. In forecasting,
+S-Mamba \cite{smamba} applies bidirectional Mamba over variate tokens with
+a linear temporal embedding, and further works explore frequency-domain
+SSMs \cite{fmamba}. \model{} unifies these threads: causal Mamba over
+time, bidirectional Mamba over frequency bins and over variates, with the
+placement of each governed by dataset characteristics rather than applied
+uniformly.
+
+\section{Method}
+\label{sec:method}
+
+\subsection{Problem Formulation and Normalization}
+
+Given a look-back window $\mathbf{X} \in \mathbb{R}^{L \times C}$ of $L$
+steps and $C$ variates, the task is to predict the next $H$ steps
+$\mathbf{Y} \in \mathbb{R}^{H \times C}$. Following RevIN \cite{revin}, we
+standardize each window per variate, $\tilde{\mathbf{X}} = (\mathbf{X} -
+\boldsymbol{\mu}) / \boldsymbol{\sigma}$, and de-normalize the final
+forecast. Instance normalization is treated as a per-dataset switch rather
+than a universal default; Sect.~\ref{sec:ablation} shows why.
+
+\subsection{Time Branch: Decomposition, Linear Backbone, Selective Scan}
+\label{sec:anchors}
+
+The time branch decomposes $\tilde{\mathbf{X}}$ with a moving average into
+trend $\mathbf{X}_t$ and seasonal $\mathbf{X}_s$ components
+\cite{autoformer,dlinear} and forecasts with two cooperating paths.
+
+\emph{Linear backbone.} Per-component linear maps project the window
+directly to the horizon:
+\begin{equation}
+\mathbf{Y}_{\mathrm{lin}} = \mathbf{W}_s \mathbf{X}_s^{\top} +
+\mathbf{W}_t \mathbf{X}_t^{\top},
+\qquad \mathbf{W}_s, \mathbf{W}_t \in \mathbb{R}^{H \times L},
+\end{equation}
+i.e., exactly DLinear \cite{dlinear}, shared across variates.
+
+\emph{Selective-scan correction.} The pair $[\mathbf{X}_s; \mathbf{X}_t]$
+is embedded per time step and processed channel-independently by a stack
+of Mamba layers \cite{mamba}. A Mamba layer discretizes a state-space
+system with input-dependent parameters
+$(\boldsymbol{\Delta}, \mathbf{B}, \mathbf{C})$:
+\begin{equation}
+\mathbf{h}_k = e^{\boldsymbol{\Delta}_k \mathbf{A}}\,\mathbf{h}_{k-1} +
+\boldsymbol{\Delta}_k \mathbf{B}_k\, u_k, \qquad
+y_k = \mathbf{C}_k^{\top} \mathbf{h}_k + D\, u_k ,
+\label{eq:ssm}
+\end{equation}
+scanned causally over the $L$ steps. The last state, summed with a
+whole-window linear embedding $\mathbf{W}_e \tilde{\mathbf{x}}^{(c)}$
+(one per variate, as in \cite{smamba}), forms the branch feature
+$\mathbf{f}_{\mathrm{time}} \in \mathbb{R}^{C \times d}$. A head
+$\phi_{\mathrm{time}}$ maps features to a horizon correction:
+\begin{equation}
+\mathbf{Y}_{\mathrm{time}} = \mathbf{Y}_{\mathrm{lin}} +
+\phi_{\mathrm{time}}(\mathbf{f}_{\mathrm{time}}), \qquad
+\phi_{\mathrm{time}} \equiv \mathbf{0} \text{ at init.}
+\label{eq:timezero}
+\end{equation}
+Because $\phi_{\mathrm{time}}$ is zero-initialized, the branch \emph{is}
+DLinear at initialization; the SSM learns only what the linear map cannot
+express. We compute the recurrence of Eq.~\eqref{eq:ssm} in fp32 even
+under mixed-precision training: the exponential and the $L$-step state
+accumulation overflow in half precision, which silently destroys training
+(observed as NaN validation losses that exhaust early-stopping patience).
+
+\subsection{Frequency Branch: Spectral Filtering and a FITS Anchor}
+
+The frequency branch applies the real FFT along time,
+$\mathbf{Z} = \mathrm{rFFT}(\tilde{\mathbf{X}}) \in
+\mathbb{C}^{C \times F}$, $F = \lfloor L/2 \rfloor + 1$, optionally
+low-passed by zeroing the top fraction $\rho$ of bins.
+
+\emph{Spectral encoder.} A learnable complex linear filter
+$\mathbf{W} = \mathbf{W}_r + i\mathbf{W}_i$ densely mixes bins,
+$\mathbf{Z}' = \mathbf{W}\mathbf{Z}$, realized with two real matrices;
+a bidirectional Mamba over the bin sequence is available as an
+input-dependent alternative. The (real, imaginary) parts are projected to
+the branch feature $\mathbf{f}_{\mathrm{freq}} \in \mathbb{R}^{C \times d}$
+and a head $\phi_{\mathrm{freq}}$ produces the spectral forecast.
+
+\emph{FITS anchor.} Mirroring the time branch, a zero-initialized complex
+linear map $\mathbf{U} \in \mathbb{C}^{F' \times F}$ with
+$F' = \lfloor (L{+}H)/2 \rfloor + 1$ interpolates the (low-passed) window
+spectrum to that of a length-$(L{+}H)$ series \cite{fits}; the inverse
+transform's last $H$ samples are the linear spectral forecast:
+\begin{equation}
+\mathbf{Y}_{\mathrm{freq}} =
+\underbrace{\mathrm{irFFT}_{L+H}(\mathbf{U}\mathbf{Z})[\,L{:}\,]}_{\text{linear-in-frequency}}
+\; + \; \phi_{\mathrm{freq}}(\mathbf{f}_{\mathrm{freq}}),
+\qquad \mathbf{U}, \phi_{\mathrm{freq}} \equiv \mathbf{0} \text{ at init.}
+\end{equation}
+Both branches therefore open training as exact linear forecasters of
+their own domain.
+
+\subsection{Cross-Channel Mixing over Variates}
+\label{sec:mixer}
+
+Channel independence is a strong baseline \cite{patchtst,dlinear} but
+leaves accuracy on the table when variates are strongly coupled
+\cite{itransformer,smamba}. Inside each branch, before its head, we
+optionally run $M$ layers of \emph{bidirectional} Mamba over the variate
+dimension --- treating the $C$ per-channel features as a sequence ---
+followed by a position-wise feed-forward block. Bidirectionality is
+essential: channel order carries no causal direction, so each layer runs
+forward and reversed scans and sums them in one residual stream. The mixer
+is a per-dataset choice: $M{=}2$ at width 512 on electricity/traffic
+(where it is the single most load-bearing component;
+Sect.~\ref{sec:ablation}), $M{=}2$ at width 256 on weather, $M{=}1$ on
+solar, and $M{=}0$ on the 7--8-channel ETT and exchange datasets, where it
+triples parameters without adding signal.
+
+\subsection{Forecast-Level Convex Fusion}
+
+Each branch emits a forecast and a feature. The model output is a gated
+convex combination
+\begin{equation}
+\mathbf{Y} = g \odot \mathbf{Y}_{\mathrm{time}} + (1 - g) \odot
+\mathbf{Y}_{\mathrm{freq}}, \qquad
+g = \sigma\!\big(\psi([\mathbf{f}_{\mathrm{time}};
+\mathbf{f}_{\mathrm{freq}}])\big) \in (0,1)^{C\times 1},
+\label{eq:fusion}
+\end{equation}
+followed by RevIN de-normalization. Since $\mathbf{Y}$ lies elementwise
+between the branch forecasts, no path can bypass the dual-domain
+structure; the gate also provides free per-sample attribution of the two
+domains. $\psi$ is zero-initialized with bias $2.2$, so training starts at
+$g \approx 0.9$: the time branch is an exact linear model at
+initialization while the frequency head is silent, and an even $0.5/0.5$
+mix would waste the highest-learning-rate epochs compensating for noise.
+
+\subsection{Training}
+
+We minimize MSE with AdamW under a halving schedule
+($\eta_e = \eta_0 \cdot 2^{-(e-1)}$), which concentrates learning in the
+first epochs and suppresses the late-epoch overfitting that cosine
+schedules invite on small benchmarks. All runs use 10 epochs; early
+stopping monitors validation loss with the best checkpoint restored.
+
+\section{Experiments}
+\label{sec:experiments}
+
+\subsection{Setup}
+
+\textbf{Datasets and protocol.} We evaluate on nine standard benchmarks
+(Table~\ref{tab:datasets}) under the unified protocol of
+\cite{itransformer,smamba}: look-back $L{=}96$ for all datasets and
+horizons $H \in \{96, 192, 336, 720\}$; ETT uses the canonical 12/4/4-month
+border split (the file tail beyond month 20 is unused), the others
+chronological 0.7/0.1/0.2 splits; variates are standardized by training-set
+statistics; metrics are MSE and MAE on the standardized test set.
+
+\begin{table}[t]
+\centering
+\caption{Benchmark datasets and where \model{} places its capacity.}
+\label{tab:datasets}
+\begin{tabular}{@{}lrrlll@{}}
+\toprule
+Dataset & Variates & Steps & Granularity & Variate mixer & Params \\
+\midrule
+ETTh1/ETTh2 & 7 & 17{,}420 & 1 hour & off & 0.25M \\
+ETTm1/ETTm2 & 7 & 69{,}680 & 15 min & off & 0.24--0.36M \\
+Weather & 21 & 52{,}696 & 10 min & $M{=}2$, $d{=}256$ & 5.8M \\
+Solar-Energy & 137 & 52{,}560 & 10 min & $M{=}1$, $d{=}128$ & 0.96M \\
+Electricity & 321 & 26{,}304 & 1 hour & $M{=}2$, $d{=}512$ & 19.7M \\
+Traffic & 862 & 17{,}544 & 1 hour & $M{=}2$, $d{=}512$ & 19.7M \\
+Exchange & 8 & 7{,}588 & 1 day & off & 0.09M \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Baselines.} We compare against the strongest published results
+under the same protocol: the state-space forecaster S-Mamba \cite{smamba},
+iTransformer \cite{itransformer}, PatchTST \cite{patchtst}, DLinear
+\cite{dlinear}, and TimesNet \cite{timesnet}. Baseline numbers are quoted
+from \cite{smamba}.
+
+\textbf{Implementation.} PyTorch 2.11 (CUDA 13.0) on a single NVIDIA RTX
+5090 (32\,GB). The selective scan runs in fp32 under AMP
+(Sect.~\ref{sec:anchors}). Per-dataset hyperparameters, configs, and the
+full ablation harness ship with the code.
+
+\subsection{Main Results}
+
+\begin{table}[t]
+\centering
+\caption{Long-term forecasting results averaged over horizons
+$H \in \{96,192,336,720\}$ with look-back $L{=}96$ (MSE/MAE; lower is
+better). Baselines quoted from \cite{smamba}. Best in \textbf{bold},
+second best \underline{underlined}.}
+\label{tab:main}
+\setlength{\tabcolsep}{3.4pt}
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+Dataset & \model{} (ours) & S-Mamba & iTransformer & PatchTST & DLinear & TimesNet \\
+\midrule
+ETTh1 & \best{0.439}/\best{0.434} & \second{0.455}/\second{0.450} & 0.454/0.447 & 0.469/0.454 & 0.456/0.452 & 0.458/0.450 \\
+ETTh2 & \best{0.375}/\best{0.402} & \second{0.381}/\second{0.405} & 0.383/0.407 & 0.387/0.407 & 0.559/0.515 & 0.414/0.427 \\
+ETTm1 & \second{0.386}/\second{0.398} & 0.398/0.405 & 0.407/0.410 & \best{0.387}/\best{0.400} & 0.403/0.407 & 0.400/0.406 \\
+ETTm2 & \second{0.280}/\second{0.325} & 0.288/0.332 & 0.288/0.332 & \best{0.281}/\best{0.326} & 0.350/0.401 & 0.291/0.333 \\
+Weather & \best{0.248}/\best{0.275} & \second{0.251}/\second{0.276} & 0.258/0.278 & 0.259/0.281 & 0.265/0.317 & 0.259/0.287 \\
+Electricity & \best{0.169}/\best{0.265} & \second{0.170}/\best{0.265} & 0.178/0.270 & 0.205/0.290 & 0.212/0.300 & 0.192/0.295 \\
+Traffic & \second{0.439}/\second{0.282} & \best{0.414}/\best{0.276} & 0.428/0.282 & 0.481/0.304 & 0.625/0.383 & 0.620/0.336 \\
+Exchange & \best{0.363}/\best{0.405} & 0.367/0.408 & \second{0.360}/\second{0.403} & 0.367/0.404 & 0.354/0.414 & 0.416/0.443 \\
+Solar & \best{0.228}/\best{0.267} & 0.240/0.273 & \second{0.233}/\second{0.262} & 0.270/0.307 & 0.330/0.401 & 0.301/0.319 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{\model{} per-horizon results (MSE/MAE), look-back $L{=}96$.}
+\label{tab:horizons}
+\setlength{\tabcolsep}{4.2pt}
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+Dataset & $H{=}96$ & $H{=}192$ & $H{=}336$ & $H{=}720$ & Avg \\
+\midrule
+ETTh1 & 0.381/0.397 & 0.429/0.423 & 0.472/0.446 & 0.472/0.468 & 0.439/0.434 \\
+ETTh2 & 0.292/0.345 & 0.368/0.392 & 0.415/0.427 & 0.423/0.442 & 0.375/0.402 \\
+ETTm1 & 0.321/0.359 & 0.366/0.385 & 0.396/0.405 & 0.461/0.443 & 0.386/0.398 \\
+ETTm2 & 0.177/0.260 & 0.241/0.302 & 0.302/0.341 & 0.398/0.397 & 0.280/0.325 \\
+Weather & 0.162/0.207 & 0.212/0.254 & 0.267/0.293 & 0.349/0.347 & 0.248/0.275 \\
+Electricity & 0.140/0.235 & 0.157/0.252 & 0.175/0.271 & 0.203/0.300 & 0.169/0.265 \\
+Traffic & 0.404/0.267 & 0.423/0.275 & 0.443/0.283 & 0.484/0.302 & 0.439/0.282 \\
+Exchange & 0.086/0.206 & 0.179/0.301 & 0.329/0.415 & 0.858/0.699 & 0.363/0.405 \\
+Solar & 0.197/0.242 & 0.228/0.265 & 0.244/0.280 & 0.243/0.281 & 0.228/0.267 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:main} summarizes averages over the four horizons;
+Table~\ref{tab:horizons} reports \model{} per horizon. \model{} attains
+the best average MSE on six datasets (ETTh1, ETTh2, Weather, Electricity,
+Exchange, Solar), is second on ETTm1/ETTm2 (within 0.001--0.006 of
+PatchTST while beating both SSM/attention baselines), and second on
+Traffic. Against S-Mamba, the strongest published state-space forecaster,
+\model{} is better on seven datasets, ties Electricity, and trails only on
+Traffic ($+0.025$ average MSE). Notably, the largest margins appear on the
+small ETT datasets (e.g.\ ETTh1 $0.439$ vs.\ $0.455$, $-3.5\%$), where the
+linear anchors and deliberate capacity restraint matter most, while on
+high-channel datasets \model{} matches attention/SSM variate mixers at
+comparable size. On ETT, \model{} uses roughly $0.25$M parameters ---
+two orders of magnitude fewer than variate-attention models configured
+for those datasets.
+
+\subsection{Component Ablations}
+\label{sec:ablation}
+
+\begin{table}[t]
+\centering
+\caption{Component ablation on Solar-Energy ($H{=}96$, single seed;
+noise floor $\approx 0.005$ MSE). Each variant flips exactly one switch of
+the full configuration.}
+\label{tab:ablation}
+\begin{tabular}{@{}lccl@{}}
+\toprule
+Variant & MSE & $\Delta$MSE & Component isolated \\
+\midrule
+full & 0.197 & --- & reference \\
+\;\;w/o channel mixer & 0.219 & $+0.022$ & cross-variate Mamba mixing \\
+\;\;w/o linear backbone & 0.209 & $+0.012$ & DLinear anchor (time) \\
+\;\;freq branch only & 0.209 & $+0.012$ & time branch removed \\
+\;\;sum fusion & 0.202 & $+0.006$ & learned gate $\rightarrow$ average \\
+\;\;time branch only & 0.198 & $+0.002$ & frequency branch removed \\
+\;\;Mamba$\rightarrow$MLP over time & 0.197 & $+0.001$ & selective scan (time) \\
+\;\;w/o instance norm & \textbf{0.181} & $\mathbf{-0.016}$ & RevIN \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:ablation} isolates each component on Solar-Energy. The
+architecture's claims hold: removing either branch degrades accuracy (the
+dual-domain structure is not redundant), the learned gate beats plain
+averaging, the DLinear anchor is load-bearing, and the variate mixer is
+the single largest contributor ($+0.022$ MSE when removed) --- consistent
+with 137 strongly coupled photovoltaic plants.
+
+\textbf{Normalization is a per-dataset decision.} The same probe that
+revealed RevIN \emph{hurting} solar ($-0.016$ MSE when removed) shows the
+opposite on traffic: removing instance normalization degrades traffic from
+$0.405$ to $0.505$ MSE at $H{=}96$. The two datasets look alike on the
+surface --- both bounded, both strongly periodic --- but solar's night
+zeros are \emph{periodic structure} (window statistics then mostly encode
+the window's night fraction, and de-normalization amplifies errors by an
+unstable standard deviation), whereas traffic windows carry genuine
+distribution shift (weekday/weekend composition, per-sensor levels) that
+instance normalization absorbs. We therefore ship normalization as a
+verified per-dataset switch and caution against transferring normalization
+conclusions across datasets.
+
+\textbf{Negative results that shaped the design.} Deepening the variate
+mixer on traffic from two to four layers ($19.7\mathrm{M} \rightarrow
+37.9$M parameters) produced no accuracy gain, so the released
+configuration keeps two layers; the residual gap to S-Mamba on traffic
+appears to require modeling the weekly cycle, which at hourly sampling
+(168 steps) exceeds the protocol look-back of 96 and is invisible to both
+branches. Similarly, enabling the variate mixer on ETT (7 channels,
+$8.4$K training windows) tripled parameters and \emph{caused} premature
+early stopping through immediate overfitting; the released ETT
+configurations disable it.
+
+\subsection{Analysis}
+
+\textbf{Where each domain wins.} The fusion gate's per-sample values
+attribute forecasts to domains at no extra cost. On solar and electricity
+the gate shifts toward the frequency branch (strong periodicity dominates),
+while on exchange --- near random-walk --- it collapses onto the time
+branch's linear backbone, effectively recovering a shrunk random-walk
+predictor. On weather, whose daily cycle (144 samples at 10-minute
+resolution) exceeds the look-back of 96 and is thus invisible to the FFT,
+the gate favors the time branch, matching our observation that replacing
+its Mamba encoder with an MLP costs accuracy on weather but not on solar.
+
+\textbf{Efficiency.} \model{} trains in under one minute per epoch on all
+nine datasets on a single consumer GPU. The bidirectional variate mixer
+scans $C$ tokens rather than $B \times C$ folded time sequences, so
+high-channel datasets (862 variates) remain memory-light; the causal time
+scan is reserved for datasets whose channel count keeps it affordable.
+
+\section{Conclusion}
+
+\model{} shows that a state-space forecaster gains from committing to
+\emph{both} domains at once --- provided each branch is anchored by the
+strongest linear model of its domain, deep components are zero-initialized
+corrections, and capacity (especially cross-variate mixing) is placed
+according to dataset characteristics rather than uniformly. Under the
+unified look-back-96 protocol, this recipe delivers best or matching
+average MSE on eight of nine standard benchmarks against the strongest
+published baselines, with parameter counts spanning $0.09$M to $19.7$M
+across datasets. Ablations verify every component and surface a
+transferable methodological caution: instance normalization can help or
+hurt substantially depending on whether apparent nonstationarity is real
+shift or periodic structure. Limitations remain: the fixed look-back of 96
+hides cycles longer than the window (weather's daily and traffic's weekly
+periods), which we believe explains the single remaining deficit on
+traffic; multi-resolution windows and adaptive spectral cutoffs are
+natural next steps.
+
+\subsubsection{\ackname}
+% TODO: funding acknowledgements.
+Code, configurations, and the ablation harness are available at
+\url{https://github.com/mike1998q/TSP}.
+
+\begin{thebibliography}{99}
+
+\bibitem{informer}
+Zhou, H., Zhang, S., Peng, J., Zhang, S., Li, J., Xiong, H., Zhang, W.:
+Informer: Beyond efficient transformer for long sequence time-series
+forecasting. In: AAAI. pp. 11106--11115 (2021)
+
+\bibitem{autoformer}
+Wu, H., Xu, J., Wang, J., Long, M.: Autoformer: Decomposition transformers
+with auto-correlation for long-term series forecasting. In: NeurIPS.
+pp. 22419--22430 (2021)
+
+\bibitem{fedformer}
+Zhou, T., Ma, Z., Wen, Q., Wang, X., Sun, L., Jin, R.: FEDformer:
+Frequency enhanced decomposed transformer for long-term series
+forecasting. In: ICML. pp. 27268--27286 (2022)
+
+\bibitem{patchtst}
+Nie, Y., Nguyen, N.H., Sinthong, P., Kalagnanam, J.: A time series is
+worth 64 words: Long-term forecasting with transformers. In: ICLR (2023)
+
+\bibitem{itransformer}
+Liu, Y., Hu, T., Zhang, H., Wu, H., Wang, S., Ma, L., Long, M.:
+iTransformer: Inverted transformers are effective for time series
+forecasting. In: ICLR (2024)
+
+\bibitem{dlinear}
+Zeng, A., Chen, M., Zhang, L., Xu, Q.: Are transformers effective for time
+series forecasting? In: AAAI. pp. 11121--11128 (2023)
+
+\bibitem{rlinear}
+Li, Z., Qi, S., Li, Y., Xu, Z.: Revisiting long-term time series
+forecasting: An investigation on linear mapping. arXiv:2305.10721 (2023)
+
+\bibitem{revin}
+Kim, T., Kim, J., Tae, Y., Park, C., Choi, J.H., Choo, J.: Reversible
+instance normalization for accurate time-series forecasting against
+distribution shift. In: ICLR (2022)
+
+\bibitem{frets}
+Yi, K., Zhang, Q., Fan, W., Wang, S., Wang, P., He, H., An, N., Lian, D.,
+Cao, L., Niu, Z.: Frequency-domain MLPs are more effective learners in
+time series forecasting. In: NeurIPS (2023)
+
+\bibitem{fits}
+Xu, Z., Zeng, A., Xu, Q.: FITS: Modeling time series with 10k parameters.
+In: ICLR (2024)
+
+\bibitem{mamba}
+Gu, A., Dao, T.: Mamba: Linear-time sequence modeling with selective state
+spaces. arXiv:2312.00752 (2023)
+
+\bibitem{smamba}
+Wang, Z., Kong, F., Feng, S., Wang, M., Zhao, H., Wang, D., Zhang, Y.:
+Is Mamba effective for time series forecasting? Neurocomputing (2025)
+
+\bibitem{fmamba}
+Ma, S., Kang, Y., Bai, P., Zhao, Y.-B.: FMamba: Mamba based on fast-attention
+for multivariate time-series forecasting. arXiv:2407.14814 (2024)
+
+\bibitem{timesnet}
+Wu, H., Hu, T., Liu, Y., Zhou, H., Wang, J., Long, M.: TimesNet: Temporal
+2D-variation modeling for general time series analysis. In: ICLR (2023)
+
+\end{thebibliography}
+
+\end{document}

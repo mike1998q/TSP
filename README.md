@@ -111,7 +111,7 @@ standard long-term forecasting benchmarks:
 | Electricity | `configs/electricity.yaml` | 321 | 1 h | 26,304 | 0.7/0.1/0.2 | 16 | 5e-4 | halve LR, d_model 512, MLP time + 2 variate-Mamba layers |
 | Solar-Energy | `configs/solar.yaml` | 137 | 10 min | 52,560 | 0.7/0.1/0.2 | 16 | 5e-4 | halve LR, RevIN off (ablation-verified), reads `solar_AL.txt` directly |
 | Exchange-Rate | `configs/exchange_rate.yaml` | 8 | 1 day | 7,588 | 0.7/0.1/0.2 | 32 | 1e-4 | halve LR, d_model 64, dropout 0.3, low-pass 0.5, mixer off |
-| Traffic | `configs/traffic.yaml` | 862 | 1 h | 17,544 | 0.7/0.1/0.2 | 16 | 1e-3 | halve LR, d_model 512, MLP time + 4 variate-Mamba layers (~38M params) |
+| Traffic | `configs/traffic.yaml` | 862 | 1 h | 17,544 | 0.7/0.1/0.2 | 16 | 1e-3 | halve LR, d_model 512, MLP time + 2 variate-Mamba layers (4 tested: no gain) |
 
 All configs train 10 epochs with the halve LR schedule. The cross-channel
 mixer is sized to the dataset: **off** on ETT and Exchange-Rate (few channels,
