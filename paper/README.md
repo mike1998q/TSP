@@ -1,36 +1,46 @@
 # ADMA 2026 submission — DD-Mamba
 
 `main.tex` is a Springer LNCS/LNAI paper (ADMA proceedings format).
+`main.pdf` is the compiled submission version (anonymous).
+
+## Format compliance (checked against the official Springer LNCS
+## template and the ADMA CFP)
+
+| Requirement | Status |
+|---|---|
+| LNCS/LNAI format (`llncs.cls`, `[runningheads]`, T1 fonts) | ✅ compiles cleanly with the official class |
+| Page limit ≤ 15 pages | ✅ 9 pages |
+| Abstract 150–250 words | ✅ 250 words |
+| `\keywords{...}` with `\and` separators | ✅ |
+| **Double-blind review** | ✅ `\anonymoustrue` toggle: anonymous author block, no acknowledgements, code URL replaced by a "released upon acceptance" note |
+| No unresolved references/citations | ✅ 0 warnings |
+| No significant overfull boxes | ✅ (all < 3 pt) |
+
+> The ADMA 2026 CFP page is not reachable from this environment's network;
+> the double-blind and 15-page requirements are taken from the most recent
+> ADMA CFP (2025: LNAI format, ≤ 15 pages, double-blind). Re-verify against
+> the 2026 page before submitting.
 
 ## Compiling
 
-ADMA uses the Springer LNCS class, which is not distributed with this repo.
-Get `llncs.cls` (and optionally `splncs04.bst`) from the official Springer
-LNCS LaTeX template:
-
-- Springer: "LaTeX template for Lecture Notes in Computer Science" —
-  https://www.springer.com/gp/computer-science/lncs/conference-proceedings-guidelines
-- Or on Overleaf: search "Springer Lecture Notes in Computer Science".
-
-Place `llncs.cls` next to `main.tex`, then:
+`llncs.cls`/`splncs04.bst` come from the official Springer LNCS template
+ZIP (not committed here for license reasons). Place them next to
+`main.tex`, then:
 
 ```bash
-pdflatex main.tex
-pdflatex main.tex   # second pass for references/labels
+pdflatex main.tex && pdflatex main.tex
 ```
 
-(The bibliography is inline via `thebibliography`, so no bibtex run is
-needed.)
+(The bibliography is inline via `thebibliography`; no bibtex run needed.)
 
-## Before submission — TODOs in main.tex
+## Camera-ready checklist (after acceptance)
 
-1. Replace the placeholder author list, affiliation, and email.
-2. Fill in the acknowledgements (funding).
-3. Check the ADMA 2026 CFP for the current page limit (historically 12–15
-   pages LNCS) and whether the review is double-blind — if so, anonymize
-   the author block and the code URL.
+1. Set `\anonymousfalse` in `main.tex`.
+2. Fill in the real author list, ORCIDs, affiliation, and email in the
+   `\else` branch of the author block.
+3. Fill in the acknowledgements (funding) in the `\else` branch at the end.
 4. Optional: add an architecture figure as Fig. 1 (the README diagram in
-   the repo root is the reference layout).
+   the repo root is the reference layout; EPS preferred by Springer).
 
 ## Where the numbers come from
 

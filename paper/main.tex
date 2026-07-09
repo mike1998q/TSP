@@ -14,16 +14,29 @@
 \newcommand{\best}[1]{\textbf{#1}}
 \newcommand{\second}[1]{\underline{#1}}
 
+% ADMA review is DOUBLE-BLIND: keep \anonymoustrue for the submission.
+% Flip to \anonymousfalse (and fill in the real author block below) only
+% for the camera-ready version.
+\newif\ifanonymous
+\anonymoustrue
+
 \begin{document}
 
 \title{\model{}: Dual-Domain State-Space Modeling with Zero-Initialized
 Linear Anchors for Long-Term Time Series Forecasting}
 
-% TODO: replace with the real author list before submission.
-\author{First Author\inst{1} \and Second Author\inst{1}}
+\ifanonymous
+\author{Anonymous Submission}
+\authorrunning{Anonymous Submission}
+\institute{ADMA 2026 double-blind review}
+\else
+% TODO: replace with the real author list for the camera-ready.
+\author{First Author\inst{1}\orcidID{0000-0000-0000-0000} \and
+Second Author\inst{1}}
 \authorrunning{F. Author et al.}
 \institute{Affiliation, City, Country\\
 \email{first.author@example.edu}}
+\fi
 
 \maketitle
 
@@ -46,15 +59,13 @@ so training starts from an exact linear model and learns nonlinear
 corrections; and (ii)~\emph{capacity placement} --- a bidirectional Mamba
 over the \emph{variate} dimension carries the model on high-channel data,
 while it is disabled on small, few-channel data where it only adds
-overfitting capacity. On nine standard benchmarks under the unified
+overfitting capacity. On nine standard benchmarks under the
 look-back-96 protocol, \model{} attains the best average MSE on seven
 datasets and matches the strongest state-space baseline on one more,
-improving over S-Mamba by up to 3.5\% average MSE on ETTh1 while using a
-fraction of its parameters on small datasets. Component-wise ablations
-confirm each design choice and surface a cautionary finding: instance
-normalization \emph{helps} traffic but \emph{hurts} solar, showing that
-normalization must be validated per dataset. Code and configurations are
-publicly available.
+improving over S-Mamba by up to 3.5\% on ETTh1 at a fraction of the
+parameters on small datasets. Ablations confirm each design choice and
+surface a cautionary finding: instance normalization \emph{helps} traffic
+yet \emph{hurts} solar, so normalization must be validated per dataset.
 \keywords{Time series forecasting \and State-space models \and Mamba \and
 Frequency domain \and Multivariate analysis}
 \end{abstract}
@@ -352,7 +363,8 @@ $H \in \{96,192,336,720\}$ with look-back $L{=}96$ (MSE/MAE; lower is
 better). Baselines quoted from \cite{smamba}. Best in \textbf{bold},
 second best \underline{underlined}.}
 \label{tab:main}
-\setlength{\tabcolsep}{3.4pt}
+\scriptsize
+\setlength{\tabcolsep}{2.6pt}
 \begin{tabular}{@{}lcccccc@{}}
 \toprule
 Dataset & \model{} (ours) & S-Mamba & iTransformer & PatchTST & DLinear & TimesNet \\
@@ -500,10 +512,16 @@ periods), which we believe explains the single remaining deficit on
 traffic; multi-resolution windows and adaptive spectral cutoffs are
 natural next steps.
 
+\ifanonymous
+\paragraph{Reproducibility.} Code, configurations, and the ablation
+harness are provided as supplementary material and will be released in a
+public repository upon acceptance.
+\else
 \subsubsection{\ackname}
-% TODO: funding acknowledgements.
+% TODO: funding acknowledgements for the camera-ready.
 Code, configurations, and the ablation harness are available at
 \url{https://github.com/mike1998q/TSP}.
+\fi
 
 \begin{thebibliography}{99}
 
