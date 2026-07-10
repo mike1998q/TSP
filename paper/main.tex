@@ -22,8 +22,9 @@
 
 \begin{document}
 
-\title{\model{}: Dual-Domain State-Space Modeling with Zero-Initialized
-Linear Anchors for Long-Term Time Series Forecasting}
+\title{\model{}: Dual-Domain State-Space Forecasting with Linear Anchors
+and Zero-Initialized Corrections}
+\titlerunning{Dual-Domain State-Space Forecasting}
 
 \ifanonymous
 \author{Anonymous Submission}
@@ -42,30 +43,28 @@ Second Author\inst{1}}
 
 \begin{abstract}
 Long-term multivariate time series forecasting must reconcile two
-complementary views of a signal: local, trend-driven dynamics that live in
-the time domain, and global periodic structure that is most compact in the
-frequency domain. Existing state-space (Mamba) forecasters model one view
-well but not both, and deep forecasters in general discard the simple
+complementary views of a signal: local, trend-driven dynamics in the time
+domain, and global periodic structure most compact in the frequency
+domain. Existing state-space (Mamba) forecasters model one view but
+not both, and deep forecasters often discard the simple
 linear maps that remain near state-of-the-art on several benchmarks. We
 present \model{}, a dual-domain architecture in which a time branch
 (trend--seasonal decomposition with a selective state-space encoder) and a
-frequency branch (learnable complex spectral filtering) each produce their
-own forecast, fused by a learned convex gate so that no prediction can
-bypass either domain. Two design principles drive its accuracy:
-(i)~\emph{linear anchoring} --- each branch carries an explicit linear
-pathway of its domain (DLinear-style projections in time, a FITS-style
-spectral map in frequency) while all nonlinear heads are zero-initialized,
-so the end-to-end map at initialization is purely linear and nonlinear
-corrections are learned on top; and (ii)~\emph{capacity placement} --- a
-bidirectional Mamba over the \emph{variate} dimension carries the model on
-high-channel data and is disabled on small, few-channel data where it only
-adds overfitting capacity. On nine benchmarks under the
-look-back-96 protocol, \model{} attains the lowest average MSE on seven
-and improves over the strongest state-space baseline S-Mamba on seven
-(up to 3.5\% on ETTh1) at a fraction of the parameters on small datasets.
-Ablations support each design choice and surface a cautionary finding —
-instance normalization \emph{helps} traffic yet \emph{hurts} solar —
-so normalization must be validated per dataset.
+frequency branch (learnable complex spectral filtering) each produce a
+forecast, fused by a learned convex gate that structurally preserves both
+prediction paths. Two principles drive its accuracy: (i)~\emph{linear anchoring} --- the time branch carries a
+DLinear-style linear pathway, the frequency branch an optional FITS-style
+spectral map, and all nonlinear heads are zero-initialized, so the model
+is purely linear at initialization, with corrections learned on top; and (ii)~\emph{capacity placement} --- a bidirectional
+Mamba over the \emph{variate} dimension carries the model on high-channel
+data and is disabled on small, few-channel data where it only overfits. On nine benchmarks under the look-back-96 protocol,
+\model{} reports the lowest average MSE on seven, improving over the
+reported S-Mamba results on five (up to 3.5\% on ETTh1), tying three within run-to-run noise, and trailing one, at a
+fraction of the parameters on small datasets. Ablations show clear
+benefits from the variate mixer and the linear anchor, while the
+frequency branch, temporal Mamba, and instance normalization are
+dataset-dependent --- the latter helps traffic yet hurts solar --- so
+components must be validated per dataset.
 \keywords{Time series forecasting \and State-space models \and Mamba \and
 Frequency domain \and Multivariate analysis}
 \end{abstract}
@@ -99,26 +98,28 @@ underuse the other.
 We address both issues with \model{}, a dual-domain forecaster organized
 around three ideas.
 
-\textbf{Dual branches that cannot be bypassed.} A time branch and a
-frequency branch each output a complete forecast; the model's prediction
-is a learned \emph{convex combination} of the two, with the gate
-conditioned on both branches' features. Because the output is constrained
-elementwise between the branch forecasts, no shortcut path around either
-domain exists --- a property we verify by construction and exploit for
-per-sample attribution of the two domains.
+\textbf{Dual branches with structurally preserved paths.} A time branch
+and a frequency branch each output a complete forecast; the model's
+prediction is a learned \emph{convex combination} of the two, with the
+gate conditioned on both branches' features. The output is constrained
+elementwise between the branch forecasts, so both domains retain an
+explicit prediction path and the gate yields per-sample attribution ---
+though the \emph{actual} contribution of each branch is learned, and the
+gate may concentrate almost entirely on one branch for some samples or
+datasets (it is a sigmoid and can saturate near 0 or 1).
 
 \textbf{Linear anchors with zero-initialized corrections.} Each branch
-carries an explicit \emph{linear} pathway that parameterizes the strongest
-linear forecaster family of its domain: seasonal/trend window-to-horizon
-projections \cite{dlinear} in the time branch, and a FITS-style
-complex-linear spectral map \cite{fits} in the frequency branch. All
-nonlinear heads (and the spectral map) are zero-initialized and the fusion
-gate opens as a constant, so the end-to-end function at initialization is
-\emph{purely linear} --- a randomly initialized DLinear scaled by the gate
---- and gradient descent learns the spectral anchor and the nonlinear
-corrections jointly, only where the data supports them
-(Sect.~\ref{sec:anchors}). This choice stabilizes small-data training and
-removes the mean-reversion failure mode of pooled deep forecasters.
+carries an explicit \emph{linear} pathway that parameterizes a strong
+linear forecaster family of its domain: DLinear-style seasonal/trend
+window-to-horizon projections \cite{dlinear} in the time branch, and an
+optional FITS-style complex-linear spectral map \cite{fits} in the
+frequency branch. These are parameterized pathways trained jointly with
+the model --- not pretrained or fitted linear predictors. All nonlinear
+heads (and the spectral map) are zero-initialized and the fusion gate
+opens as a constant $g_0$, so the end-to-end function at initialization
+is \emph{purely linear}: $g_0$ times a randomly initialized DLinear-style
+map (Sect.~\ref{sec:anchors}). This choice stabilizes small-data training
+and removes the mean-reversion failure mode of pooled deep forecasters.
 
 \textbf{Mamba where it pays.} A causal Mamba encoder models the time axis;
 a \emph{bidirectional} Mamba (frequency bins and channels have no arrow of
@@ -132,9 +133,9 @@ it only adds overfitting capacity.
 Our contributions are:
 \begin{enumerate}
 \item A dual-domain forecasting architecture whose output is a gated
-convex combination of per-branch forecasts, guaranteeing that both the
-time and the frequency view contribute to every prediction
-(Sect.~\ref{sec:method}).
+convex combination of per-branch forecasts, structurally preserving a
+prediction path from each domain and exposing per-sample attribution of
+their learned contributions (Sect.~\ref{sec:method}).
 \item A linear-anchoring scheme --- domain-appropriate linear pathways
 with zero-initialized nonlinear corrections --- under which the end-to-end
 map at initialization is purely linear, yielding large gains on small
@@ -143,12 +144,13 @@ benchmarks (Sect.~\ref{sec:anchors}, ablated in Sect.~\ref{sec:ablation}).
 time where temporal microstructure matters, bidirectional Mamba over
 variates where cross-channel structure dominates, and neither where data
 is scarce (Sect.~\ref{sec:mixer}).
-\item The lowest average MSE on seven of nine standard benchmarks under
-the unified look-back-96 protocol, plus a released ablation harness and a
-case-study ablation that isolates every component --- including negative
-and dataset-dependent findings (instance normalization helps traffic by
-$+0.10$ MSE yet hurts solar by $0.016$) that we believe are as actionable
-as the positive ones (Sect.~\ref{sec:experiments}).
+\item The lowest reported average MSE on seven of nine standard
+benchmarks under the unified look-back-96 protocol, relative to results
+published under the same protocol, plus a released ablation harness and a
+case-study ablation --- including negative and dataset-dependent findings
+(instance normalization helps traffic by $+0.10$ MSE yet hurts solar by
+$0.016$) that we believe are as actionable as the positive ones
+(Sect.~\ref{sec:experiments}).
 \end{enumerate}
 
 \section{Related Work}
@@ -171,8 +173,8 @@ normalization \cite{revin}. FreTS \cite{frets} learns MLPs in the
 frequency domain, and FITS \cite{fits} forecasts with a single complex
 linear interpolation of the low-passed spectrum at negligible parameter
 cost. \model{} does not compete with these models --- it \emph{contains}
-them: each branch's backbone is the linear model of its domain, and the
-deep machinery is trained as a correction on top.
+them: each branch carries a linear pathway of its domain's model family,
+and the deep machinery is trained as a correction on top.
 
 \textbf{State-space models.} Mamba \cite{mamba} introduced selective SSMs
 with input-dependent dynamics and linear-time scans. In forecasting,
@@ -210,7 +212,9 @@ directly to the horizon:
 \mathbf{W}_t \mathbf{X}_t^{\top},
 \qquad \mathbf{W}_s, \mathbf{W}_t \in \mathbb{R}^{H \times L},
 \end{equation}
-i.e., exactly DLinear \cite{dlinear}, shared across variates.
+i.e., a DLinear-style map \cite{dlinear} (randomly initialized and
+trained jointly --- a parameterized pathway, not a fitted DLinear),
+shared across variates.
 
 \emph{Selective-scan correction.} The pair $[\mathbf{X}_s; \mathbf{X}_t]$
 is embedded per time step and processed channel-independently by a stack
@@ -234,9 +238,9 @@ $\phi_{\mathrm{time}}$ maps features to a horizon correction:
 \phi_{\mathrm{time}} \equiv \mathbf{0} \text{ at init.}
 \label{eq:timezero}
 \end{equation}
-Because $\phi_{\mathrm{time}}$ is zero-initialized, the branch \emph{is}
-DLinear at initialization; the SSM learns only what the linear map cannot
-express. We compute the recurrence of Eq.~\eqref{eq:ssm} in fp32 even
+Because $\phi_{\mathrm{time}}$ is zero-initialized, the branch's output
+at initialization equals its (randomly initialized) DLinear-style
+backbone; the SSM learns only what the linear map cannot express. We compute the recurrence of Eq.~\eqref{eq:ssm} in fp32 even
 under mixed-precision training: the exponential and the $L$-step state
 accumulation overflow in half precision, which silently destroys training
 (observed as NaN validation losses that exhaust early-stopping patience).
@@ -256,7 +260,8 @@ input-dependent alternative. The (real, imaginary) parts are projected to
 the branch feature $\mathbf{f}_{\mathrm{freq}} \in \mathbb{R}^{C \times d}$
 and a head $\phi_{\mathrm{freq}}$ produces the spectral forecast.
 
-\emph{FITS anchor.} Mirroring the time branch, a complex linear map
+\emph{FITS anchor (optional, per dataset).} Mirroring the time branch, a
+complex linear map
 $\mathbf{U} \in \mathbb{C}^{F' \times F}$ with
 $F' = \lfloor (L{+}H)/2 \rfloor + 1$ maps the (low-passed) window spectrum
 to that of a length-$(L{+}H)$ series, whose inverse transform's last $H$
@@ -282,8 +287,12 @@ rest of the model. Consequently, the precise initialization claim is: the
 time branch coincides with a (randomly initialized) DLinear, the frequency
 branch outputs zero, and the fusion gate is the constant $g_0$
 (Sect.~\ref{sec:fusion}), so the \emph{end-to-end} map is the purely
-linear forecaster $g_0 \cdot \mathbf{Y}_{\mathrm{lin}}$. Both branches
-retain explicit linear pathways of their domain throughout training.
+linear function $g_0 \cdot \mathbf{Y}_{\mathrm{lin}}$ --- linear by
+construction, not a fitted linear model. The anchor is enabled per
+dataset (ETTh1, ETTh2, and Weather; Table~\ref{tab:hparams}); where it is
+disabled, the frequency branch remains fully active through its spectral
+encoder and head but carries no explicit linear pathway, so the
+linear-anchoring property then rests on the time branch alone.
 
 \subsection{Cross-Channel Mixing over Variates}
 \label{sec:mixer}
@@ -315,12 +324,16 @@ g = \sigma\!\big(\psi([\mathbf{f}_{\mathrm{time}};
 \label{eq:fusion}
 \end{equation}
 followed by RevIN de-normalization. Since $\mathbf{Y}$ lies elementwise
-between the branch forecasts, no path can bypass the dual-domain
-structure; the gate also provides free per-sample attribution of the two
-domains. $\psi$ is zero-initialized with bias $2.2$, so training starts at
-$g \approx 0.9$: the time branch is an exact linear model at
-initialization while the frequency head is silent, and an even $0.5/0.5$
-mix would waste the highest-learning-rate epochs compensating for noise.
+between the branch forecasts, both domains retain an explicit prediction
+path, and the gate provides free per-sample attribution. The constraint
+is structural, not behavioral: $g$ is a sigmoid and can saturate near 0
+or 1, so one branch may contribute very little for some samples or
+datasets --- which is by design, as the ablations show the useful domain
+is dataset-dependent. $\psi$ is zero-initialized with bias $2.2$, so
+training starts at $g \approx 0.9$: the time branch's output is purely
+linear at initialization while the frequency branch is silent, and an
+even $0.5/0.5$ mix would waste the highest-learning-rate epochs
+compensating for noise.
 
 \subsection{Training}
 
@@ -395,8 +408,14 @@ the released harness supports it directly (\texttt{--seeds}).
 \caption{Per-dataset hyperparameters. $d$: model width; time enc.:
 time-branch encoder (Mamba layers in parentheses); $M$: variate-mixer
 layers; $N$: SSM state size; $\rho$: spectral low-pass fraction
-(Sect.~3.3); FITS: spectral linear anchor; IN: instance normalization
-(RevIN); do.: dropout; B: batch size; wd: weight decay.}
+(Sect.~3.3); FITS: the \emph{optional} spectral linear anchor of Eq.~(5)
+--- when ``no'', the frequency branch remains fully active (rFFT, spectral
+encoder, forecast head) but carries no explicit linear pathway; IN:
+instance normalization (RevIN); do.: dropout; B: batch size; wd: weight
+decay. $^{\dagger}$All reported Solar results use IN~=~yes; the ablation
+in Sect.~\ref{sec:ablation} found IN~=~no better at $H{=}96$, and the
+released configuration adopts it, but the main tables are not updated
+until a full multi-horizon re-run (see text).}
 \label{tab:hparams}
 \scriptsize
 \setlength{\tabcolsep}{3.2pt}
@@ -409,7 +428,7 @@ ETTh2 & 128 & Mamba (1) & 0 & 16 & 0.3 & yes & yes & $5{\cdot}10^{-4}$ & 32 & 0.
 ETTm1 & 128 & Mamba (2) & 0 & 16 & 0 & no & yes & $10^{-4}$ & 32 & 0.1/$10^{-4}$ \\
 ETTm2 & 128 & Mamba (1) & 0 & 16 & 0.2 & no & yes & $10^{-4}$ & 32 & 0.2/$2{\cdot}10^{-4}$ \\
 Weather & 256 & Mamba (2) & 2 & 16 & 0 & yes & yes & $2{\cdot}10^{-4}$ & 32 & 0.1/$10^{-4}$ \\
-Solar & 128 & Mamba (2) & 1 & 16 & 0 & no & \textbf{no} & $5{\cdot}10^{-4}$ & 16 & 0.1/$10^{-4}$ \\
+Solar & 128 & Mamba (2) & 1 & 16 & 0 & no & yes$^{\dagger}$ & $5{\cdot}10^{-4}$ & 16 & 0.1/$10^{-4}$ \\
 Electricity & 512 & MLP & 2 & 32 & 0 & no & yes & $5{\cdot}10^{-4}$ & 16 & 0.1/$10^{-4}$ \\
 Traffic & 512 & MLP & 2 & 32 & 0 & no & yes & $10^{-3}$ & 16 & 0.1/$10^{-4}$ \\
 Exchange & 64 & Mamba (1) & 0 & 8 & 0.5 & no & yes & $10^{-4}$ & 32 & 0.3/$5{\cdot}10^{-4}$ \\
@@ -423,8 +442,10 @@ Exchange & 64 & Mamba (1) & 0 & 8 & 0.5 & no & yes & $10^{-4}$ & 32 & 0.3/$5{\cd
 \centering
 \caption{Long-term forecasting results averaged over horizons
 $H \in \{96,192,336,720\}$ with look-back $L{=}96$ (MSE/MAE; lower is
-better). Baselines quoted from \cite{smamba}. Best in \textbf{bold},
-second best \underline{underlined}; exact ties are marked equally.}
+better). Baselines quoted from \cite{smamba}. \textbf{Bold} marks the
+best result \emph{and} every result within the run-to-run noise floor
+($<0.005$, Sect.~\ref{sec:repro}) of it, treated as tied best;
+\underline{underline} marks the next-best result.}
 \label{tab:main}
 \scriptsize
 \setlength{\tabcolsep}{2.6pt}
@@ -433,13 +454,13 @@ second best \underline{underlined}; exact ties are marked equally.}
 Dataset & \model{} (ours) & S-Mamba & iTransformer & PatchTST & DLinear & TimesNet \\
 \midrule
 ETTh1 & \best{0.439}/\best{0.434} & 0.455/0.450 & \second{0.454}/\second{0.447} & 0.469/0.454 & 0.456/0.452 & 0.458/0.450 \\
-ETTh2 & \best{0.375}/\best{0.402} & \second{0.381}/\second{0.405} & 0.383/0.407 & 0.387/0.407 & 0.559/0.515 & 0.414/0.427 \\
-ETTm1 & \best{0.386}/\best{0.398} & 0.398/0.405 & 0.407/0.410 & \second{0.387}/\second{0.400} & 0.403/0.407 & 0.400/0.406 \\
-ETTm2 & \best{0.280}/\best{0.325} & 0.288/0.332 & 0.288/0.332 & \second{0.281}/\second{0.326} & 0.350/0.401 & 0.291/0.333 \\
-Weather & \best{0.248}/\best{0.275} & \second{0.251}/\second{0.276} & 0.258/0.278 & 0.259/0.281 & 0.265/0.317 & 0.259/0.287 \\
-Electricity & \best{0.169}/\best{0.265} & \second{0.170}/\best{0.265} & 0.178/\second{0.270} & 0.205/0.290 & 0.212/0.300 & 0.192/0.295 \\
+ETTh2 & \best{0.375}/\best{0.402} & \second{0.381}/\best{0.405} & 0.383/\second{0.407} & 0.387/\second{0.407} & 0.559/0.515 & 0.414/0.427 \\
+ETTm1 & \best{0.386}/\best{0.398} & \second{0.398}/\second{0.405} & 0.407/0.410 & \best{0.387}/\best{0.400} & 0.403/0.407 & 0.400/0.406 \\
+ETTm2 & \best{0.280}/\best{0.325} & \second{0.288}/\second{0.332} & \second{0.288}/\second{0.332} & \best{0.281}/\best{0.326} & 0.350/0.401 & 0.291/0.333 \\
+Weather & \best{0.248}/\best{0.275} & \best{0.251}/\best{0.276} & \second{0.258}/\best{0.278} & 0.259/\second{0.281} & 0.265/0.317 & 0.259/0.287 \\
+Electricity & \best{0.169}/\best{0.265} & \best{0.170}/\best{0.265} & \second{0.178}/\second{0.270} & 0.205/0.290 & 0.212/0.300 & 0.192/0.295 \\
 Traffic & 0.439/\second{0.282} & \best{0.414}/\best{0.276} & \second{0.428}/\second{0.282} & 0.481/0.304 & 0.625/0.383 & 0.620/0.336 \\
-Exchange & 0.363/0.405 & 0.367/0.408 & \second{0.360}/\best{0.403} & 0.367/\second{0.404} & \best{0.354}/0.414 & 0.416/0.443 \\
+Exchange & 0.363/\best{0.405} & 0.367/\second{0.408} & \second{0.360}/\best{0.403} & 0.367/\best{0.404} & \best{0.354}/0.414 & 0.416/0.443 \\
 Solar & \best{0.228}/\second{0.267} & 0.240/0.273 & \second{0.233}/\best{0.262} & 0.270/0.307 & 0.330/0.401 & 0.301/0.319 \\
 \bottomrule
 \end{tabular}
@@ -468,26 +489,29 @@ Solar & 0.197/0.242 & 0.228/0.265 & 0.244/0.280 & 0.243/0.281 & 0.228/0.267 \\
 \end{table}
 
 Table~\ref{tab:main} summarizes averages over the four horizons;
-Table~\ref{tab:horizons} reports \model{} per horizon. \model{} attains
-the lowest average MSE on seven of the nine datasets (ETTh1, ETTh2, ETTm1,
-ETTm2, Weather, Electricity, Solar) and ranks third on the remaining two.
-The margins over the runner-up vary widely and we read them accordingly:
-on ETTh1 and Solar they are substantial ($-0.015$ and $-0.005$ MSE), on
-ETTm1/ETTm2 the advantage over PatchTST is $0.001$ --- within run-to-run
-noise (Sect.~\ref{sec:repro}), so we regard these as on par --- and on
-Electricity the MAE ties S-Mamba exactly. On Exchange, a near
-random-walk dataset where all methods cluster within $0.013$ MSE, plain
-DLinear remains best and \model{} is third; on Traffic, S-Mamba and
-iTransformer lead and \model{} trails by $+0.025$ MSE, which we attribute
-to the weekly cycle exceeding the protocol look-back
-(Sect.~\ref{sec:ablation}). Against S-Mamba specifically, the strongest
-published state-space forecaster, \model{} has lower average MSE on seven
-datasets, is on par on Electricity ($-0.001$), and is behind only on
-Traffic. The largest margins appear on the small ETT datasets (e.g.\
-ETTh1 $0.439$ vs.\ $0.455$, $-3.5\%$), where the linear anchors and
-deliberate capacity restraint matter most; there \model{} uses roughly
-$0.25$M parameters, two orders of magnitude fewer than variate-attention
-models configured for those datasets.
+Table~\ref{tab:horizons} reports \model{} per horizon. Applying the
+noise-floor tie rule consistently, \model{} reports the lowest average
+MSE on seven of the nine datasets: the margin is clear on ETTh1
+($-0.015$), ETTh2 ($-0.006$), ETTm1 ($-0.011$ over S-Mamba, though only
+$-0.001$ --- a tie --- over PatchTST), ETTm2 (likewise tied with
+PatchTST), and Solar ($-0.005$, exactly at the noise floor, so we do not
+call it significant without multi-seed evidence), while on Weather
+($-0.003$) and Electricity ($-0.001$) the lead over S-Mamba is below the
+floor and the two methods should be read as tied. \model{} remains
+competitive on Exchange --- a near random-walk dataset where all methods
+cluster within $0.013$ MSE and plain DLinear is best, $0.009$ ahead of
+\model{} --- and lags S-Mamba on Traffic by $+0.025$ MSE. We
+\emph{hypothesize} the traffic deficit stems from the weekly cycle
+exceeding the protocol look-back; this is not yet experimentally
+verified, and Sect.~\ref{sec:conclusion} lists the experiments that
+would test it. All comparisons are relative to results \emph{reported}
+in \cite{smamba} under the same protocol (Sect.~4.1), so we phrase our
+overall claim conservatively: \model{} is competitive with, and on
+several small benchmarks ahead of, the reported state of the art. The
+clearest margins appear on the small ETT datasets, where the linear
+anchors and deliberate capacity restraint matter most; there \model{}
+uses roughly $0.25$M parameters, two orders of magnitude fewer than
+variate-attention models configured for those datasets.
 
 \subsection{Component Ablations: A Case Study}
 \label{sec:ablation}
@@ -526,12 +550,30 @@ full & 0.197 & --- & reference \\
 \end{tabular}
 \end{table}
 
-Table~\ref{tab:ablation} isolates each component on Solar-Energy. The
-architecture's claims hold: removing either branch degrades accuracy (the
-dual-domain structure is not redundant), the learned gate beats plain
-averaging, the DLinear anchor is load-bearing, and the variate mixer is
-the single largest contributor ($+0.022$ MSE when removed) --- consistent
-with 137 strongly coupled photovoltaic plants.
+Table~\ref{tab:ablation} isolates each component on Solar-Energy. For
+consistency with the main results, the ``full'' configuration here is
+exactly the one behind Tables~\ref{tab:main}--\ref{tab:horizons}
+(IN~=~yes; its $0.197$ MSE matches the Solar $H{=}96$ entry of
+Table~\ref{tab:horizons}); the IN~=~no finding below post-dates the main
+measurements and is adopted only in the released configuration.
+
+The evidence is differentiated, and we read it as such. \emph{Clear
+contributors} (well above the noise floor): the variate mixer ($+0.022$
+when removed) --- consistent with 137 strongly coupled photovoltaic
+plants --- the DLinear anchor ($+0.012$), and the time branch as a whole
+($+0.012$). \emph{Marginal on this dataset}: the learned gate over plain
+averaging ($+0.006$, barely above the floor), the frequency branch
+($+0.002$, below the floor), and the temporal Mamba versus an MLP
+($+0.001$, a tie). \emph{Harmful here}: instance normalization
+($-0.016$ when removed). We therefore do not claim that every component
+is validated by this study: on solar, the frequency branch and the
+temporal SSM show no measurable benefit, and their value --- like
+RevIN's --- is dataset-dependent (the frequency branch is structurally
+limited whenever the dominant period exceeds the look-back, as here and
+on weather/traffic; the temporal SSM is dispensable exactly where the
+variate mixer carries the signal). Multi-dataset, multi-seed evidence is
+required before component-level claims generalize, and the released
+harness is built to produce it.
 
 \textbf{Normalization is a per-dataset decision.} The same probe that
 revealed RevIN \emph{hurting} solar ($-0.016$ MSE when removed) shows the
@@ -549,10 +591,12 @@ conclusions across datasets.
 \textbf{Negative results that shaped the design.} Deepening the variate
 mixer on traffic from two to four layers ($19.7\mathrm{M} \rightarrow
 37.9$M parameters) produced no accuracy gain, so the released
-configuration keeps two layers; the residual gap to S-Mamba on traffic
-appears to require modeling the weekly cycle, which at hourly sampling
-(168 steps) exceeds the protocol look-back of 96 and is invisible to both
-branches. Similarly, enabling the variate mixer on ETT (7 channels,
+configuration keeps two layers; our working \emph{hypothesis} for the
+residual gap to S-Mamba on traffic is the weekly cycle, which at hourly
+sampling (168 steps) exceeds the protocol look-back of 96 and is
+invisible to both branches --- a hypothesis directly testable by widening
+the look-back to 168/336, adding calendar covariates, or re-comparing
+against S-Mamba under a longer window, none of which we have run yet. Similarly, enabling the variate mixer on ETT (7 channels,
 $8.4$K training windows) tripled parameters and \emph{caused} premature
 early stopping through immediate overfitting; the released ETT
 configurations disable it.
@@ -571,35 +615,48 @@ traffic's weekly cycles). Beyond ablations, the fusion gate
 two domains at no extra cost; a systematic study of gate behavior across
 datasets is left for the extended version.
 
-\textbf{Efficiency.} \model{} trains in under one minute per epoch on all
-nine datasets on a single consumer GPU. The bidirectional variate mixer
-scans $C$ tokens rather than $B \times C$ folded time sequences, so
-high-channel datasets (862 variates) remain memory-light; the causal time
-scan is reserved for datasets whose channel count keeps it affordable.
+\textbf{Efficiency.} We make no measured efficiency claim in this version
+and note only two design properties: parameter counts span $0.09$M--%
+$19.7$M across datasets (Table~\ref{tab:datasets}), sized to each
+dataset rather than fixed; and the bidirectional variate mixer scans $C$
+tokens rather than $B \times C$ folded time sequences, so its cost grows
+with the channel count, not with batch~$\times$~channels, while the
+causal time scan is enabled only where the channel count keeps it
+affordable. A wall-clock, memory, and throughput comparison against
+S-Mamba, iTransformer, and PatchTST under identical hardware is left for
+the extended version.
 
 \section{Conclusion}
+\label{sec:conclusion}
 
-\model{} shows that a state-space forecaster gains from committing to
-\emph{both} domains at once --- provided each branch is anchored by the
-strongest linear model of its domain, deep components are zero-initialized
-corrections, and capacity (especially cross-variate mixing) is placed
-according to dataset characteristics rather than uniformly. Under the
-unified look-back-96 protocol, this recipe delivers best or matching
-average MSE on eight of nine standard benchmarks against the strongest
-published baselines, with parameter counts spanning $0.09$M to $19.7$M
-across datasets. Ablations verify every component and surface a
-transferable methodological caution: instance normalization can help or
-hurt substantially depending on whether apparent nonstationarity is real
-shift or periodic structure. Limitations remain. Methodologically: main results are single-seed (we
+\model{} shows that a state-space forecaster benefits from committing to
+\emph{both} domains at once --- provided each branch carries a linear
+pathway of its domain, deep components are zero-initialized corrections,
+and capacity (especially cross-variate mixing) is placed according to
+dataset characteristics rather than uniformly. Under the unified
+look-back-96 protocol, this recipe achieves the lowest reported average
+MSE on seven of nine standard benchmarks and remains competitive on
+Exchange, while still lagging behind S-Mamba on Traffic, with parameter
+counts spanning $0.09$M to $19.7$M across datasets. The case-study
+ablation shows clear benefits from the variate mixer, the linear anchor,
+and the time branch, finds the frequency branch and temporal SSM
+dataset-dependent, and surfaces a transferable methodological caution:
+instance normalization can help or hurt substantially depending on
+whether apparent nonstationarity is real shift or periodic structure.
+
+Limitations remain. Methodologically: main results are single-seed (we
 treat sub-noise-floor differences as ties, and multi-seed
 mean~$\pm$~std reporting is deferred to the camera-ready), the complete
 ablation suite is reported on one dataset and horizon, and baseline
 numbers are quoted from \cite{smamba} under an identical protocol rather
-than re-run in a unified framework. Architecturally: the fixed look-back
-of 96 hides cycles longer than the window (weather's daily and traffic's
-weekly periods), which we believe explains the remaining deficit on
-traffic; multi-resolution windows and adaptive spectral cutoffs are
-natural next steps.
+than re-run in a unified framework --- so our comparative claims should
+be read as ``competitive with reported results under the same
+protocol''. Architecturally: the fixed look-back of 96 hides cycles
+longer than the window (weather's daily and traffic's weekly periods); we
+hypothesize this explains the remaining deficit on traffic, a claim to be
+tested with longer look-backs (168/336), calendar covariates, and a
+same-window re-comparison against S-Mamba. Multi-resolution windows and
+adaptive spectral cutoffs are natural next steps.
 
 \ifanonymous
 \paragraph{Reproducibility.} Code, configurations, and the ablation
