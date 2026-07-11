@@ -46,21 +46,22 @@ Long-term multivariate time series forecasting must reconcile two
 complementary views of a signal: local, trend-driven dynamics in the time
 domain, and global periodic structure most compact in the frequency
 domain. Existing state-space (Mamba) forecasters model one view but
-not both, and deep forecasters often discard the simple
-linear maps that remain near state-of-the-art on several benchmarks. We
+not both, and deep forecasters often discard the simple linear maps that
+remain near state-of-the-art on several benchmarks. We
 present \model{}, a dual-domain architecture in which a time branch
 (trend--seasonal decomposition with a selective state-space encoder) and a
 frequency branch (learnable complex spectral filtering) each produce a
 forecast, fused by a learned convex gate that structurally preserves both
 prediction paths. Two principles drive its accuracy: (i)~\emph{linear anchoring} --- the time branch carries a
 DLinear-style linear pathway, the frequency branch an optional FITS-style
-spectral map, and all nonlinear heads are zero-initialized, so the model
-is purely linear at initialization, with corrections learned on top; and (ii)~\emph{capacity placement} --- a bidirectional
+spectral map, and all nonlinear heads are zero-initialized, so at
+initialization the model reduces to a linear map of the
+instance-normalized window; and (ii)~\emph{capacity placement} --- a bidirectional
 Mamba over the \emph{variate} dimension carries the model on high-channel
 data and is disabled on small, few-channel data where it only overfits. On nine benchmarks under the look-back-96 protocol,
 \model{} reports the lowest average MSE on seven, improving over the
-reported S-Mamba results on five (up to 3.5\% on ETTh1), tying three within run-to-run noise, and trailing one, at a
-fraction of the parameters on small datasets. Ablations show clear
+reported S-Mamba results on five (up to 3.5\% on ETTh1), tying three within run-to-run noise, and trailing one, with far
+fewer parameters on small datasets. Ablations show clear
 benefits from the variate mixer and the linear anchor, while the
 frequency branch, temporal Mamba, and instance normalization are
 dataset-dependent --- the latter helps traffic yet hurts solar --- so
@@ -103,8 +104,10 @@ and a frequency branch each output a complete forecast; the model's
 prediction is a learned \emph{convex combination} of the two, with the
 gate conditioned on both branches' features. The output is constrained
 elementwise between the branch forecasts, so both domains retain an
-explicit prediction path and the gate yields per-sample attribution ---
-though the \emph{actual} contribution of each branch is learned, and the
+explicit prediction path, and the gate value reports the convex weight
+assigned to each branch --- a proxy for, not a causal measure of, their
+contributions --- while the \emph{actual} contribution of each branch is
+learned, and the
 gate may concentrate almost entirely on one branch for some samples or
 datasets (it is a sigmoid and can saturate near 0 or 1).
 
@@ -116,9 +119,11 @@ optional FITS-style complex-linear spectral map \cite{fits} in the
 frequency branch. These are parameterized pathways trained jointly with
 the model --- not pretrained or fitted linear predictors. All nonlinear
 heads (and the spectral map) are zero-initialized and the fusion gate
-opens as a constant $g_0$, so the end-to-end function at initialization
-is \emph{purely linear}: $g_0$ times a randomly initialized DLinear-style
-map (Sect.~\ref{sec:anchors}). This choice stabilizes small-data training
+opens as a constant $g_0$, so at initialization the model reduces to
+$g_0$ times a randomly initialized DLinear-style map of the
+\emph{instance-normalized} window --- linear in the normalized space, the
+same normalization wrapper used by RLinear-class linear models
+\cite{rlinear,revin} (Sect.~\ref{sec:anchors}). This choice stabilizes small-data training
 and removes the mean-reversion failure mode of pooled deep forecasters.
 
 \textbf{Mamba where it pays.} A causal Mamba encoder models the time axis;
@@ -134,12 +139,12 @@ Our contributions are:
 \begin{enumerate}
 \item A dual-domain forecasting architecture whose output is a gated
 convex combination of per-branch forecasts, structurally preserving a
-prediction path from each domain and exposing per-sample attribution of
-their learned contributions (Sect.~\ref{sec:method}).
+prediction path from each domain and exposing each branch's per-sample
+convex weight (Sect.~\ref{sec:method}).
 \item A linear-anchoring scheme --- domain-appropriate linear pathways
-with zero-initialized nonlinear corrections --- under which the end-to-end
-map at initialization is purely linear, yielding large gains on small
-benchmarks (Sect.~\ref{sec:anchors}, ablated in Sect.~\ref{sec:ablation}).
+with zero-initialized nonlinear corrections --- under which the model at
+initialization reduces to a linear map of the instance-normalized window,
+yielding large gains on small benchmarks (Sect.~\ref{sec:anchors}, ablated in Sect.~\ref{sec:ablation}).
 \item A capacity-placement recipe for selective SSMs: causal Mamba over
 time where temporal microstructure matters, bidirectional Mamba over
 variates where cross-channel structure dominates, and neither where data
@@ -208,8 +213,8 @@ trend $\mathbf{X}_t$ and seasonal $\mathbf{X}_s$ components
 \emph{Linear backbone.} Per-component linear maps project the window
 directly to the horizon:
 \begin{equation}
-\mathbf{Y}_{\mathrm{lin}} = \mathbf{W}_s \mathbf{X}_s^{\top} +
-\mathbf{W}_t \mathbf{X}_t^{\top},
+\mathbf{Y}_{\mathrm{lin}} = \mathbf{W}_s \mathbf{X}_s +
+\mathbf{W}_t \mathbf{X}_t \in \mathbb{R}^{H \times C},
 \qquad \mathbf{W}_s, \mathbf{W}_t \in \mathbb{R}^{H \times L},
 \end{equation}
 i.e., a DLinear-style map \cite{dlinear} (randomly initialized and
@@ -227,7 +232,13 @@ $(\boldsymbol{\Delta}, \mathbf{B}, \mathbf{C})$:
 y_k = \mathbf{C}_k^{\top} \mathbf{h}_k + D\, u_k ,
 \label{eq:ssm}
 \end{equation}
-scanned causally over the $L$ steps. The last state, summed with a
+scanned causally over the $L$ steps and applied independently to each of
+the $d_{\mathrm{in}}$ feature dimensions: per dimension, the state is
+$\mathbf{h}_k \in \mathbb{R}^{N}$, $\mathbf{A} \in \mathbb{R}^{N}$ is
+diagonal, the input $u_k$ is scalar, and
+$(\boldsymbol{\Delta}_k \in \mathbb{R},\; \mathbf{B}_k, \mathbf{C}_k \in
+\mathbb{R}^{N})$ are produced from $u$ by learned linear maps
+\cite{mamba}. The last state, summed with a
 whole-window linear embedding $\mathbf{W}_e \tilde{\mathbf{x}}^{(c)}$
 (one per variate, as in \cite{smamba}), forms the branch feature
 $\mathbf{f}_{\mathrm{time}} \in \mathbb{R}^{C \times d}$. A head
@@ -254,7 +265,9 @@ low-passed by zeroing the top fraction $\rho$ of bins.
 
 \emph{Spectral encoder.} A learnable complex linear filter
 $\mathbf{W} = \mathbf{W}_r + i\mathbf{W}_i$ densely mixes bins,
-$\mathbf{Z}' = \mathbf{W}\mathbf{Z}$, realized with two real matrices;
+$\mathbf{Z}' = \mathbf{Z}\mathbf{W}^{\top} \in \mathbb{C}^{C \times F}$
+with $\mathbf{W} \in \mathbb{C}^{F \times F}$ acting along the frequency
+axis, realized with two real matrices;
 a bidirectional Mamba over the bin sequence is available as an
 input-dependent alternative. The (real, imaginary) parts are projected to
 the branch feature $\mathbf{f}_{\mathrm{freq}} \in \mathbb{R}^{C \times d}$
@@ -263,12 +276,13 @@ and a head $\phi_{\mathrm{freq}}$ produces the spectral forecast.
 \emph{FITS anchor (optional, per dataset).} Mirroring the time branch, a
 complex linear map
 $\mathbf{U} \in \mathbb{C}^{F' \times F}$ with
-$F' = \lfloor (L{+}H)/2 \rfloor + 1$ maps the (low-passed) window spectrum
-to that of a length-$(L{+}H)$ series, whose inverse transform's last $H$
+$F' = \lfloor (L{+}H)/2 \rfloor + 1$, applied along the frequency axis
+($\mathbf{Z}\mathbf{U}^{\top} \in \mathbb{C}^{C \times F'}$), maps the
+(low-passed) window spectrum to that of a length-$(L{+}H)$ series, whose inverse transform's last $H$
 samples are the branch's linear spectral forecast:
 \begin{equation}
 \mathbf{Y}_{\mathrm{freq}} =
-\underbrace{\mathrm{irFFT}_{L+H}(\mathbf{U}\mathbf{Z})[\,L{:}\,]}_{\text{linear-in-frequency}}
+\underbrace{\mathrm{irFFT}_{L+H}(\mathbf{Z}\mathbf{U}^{\top})[\,L{:}\,]}_{\text{linear-in-frequency}}
 \; + \; \phi_{\mathrm{freq}}(\mathbf{f}_{\mathrm{freq}}),
 \qquad \mathbf{U}, \phi_{\mathrm{freq}} \equiv \mathbf{0} \text{ at init.}
 \end{equation}
@@ -286,9 +300,14 @@ lean on the time anchor until $\mathbf{U}$ is learned jointly with the
 rest of the model. Consequently, the precise initialization claim is: the
 time branch coincides with a (randomly initialized) DLinear, the frequency
 branch outputs zero, and the fusion gate is the constant $g_0$
-(Sect.~\ref{sec:fusion}), so the \emph{end-to-end} map is the purely
-linear function $g_0 \cdot \mathbf{Y}_{\mathrm{lin}}$ --- linear by
-construction, not a fitted linear model. The anchor is enabled per
+(Sect.~\ref{sec:fusion}), so in the instance-normalized space the
+end-to-end map is the linear function $g_0 \cdot
+\mathbf{Y}_{\mathrm{lin}}$. Composed with RevIN --- whose window
+statistics are themselves a nonlinear function of the input --- the model
+at initialization is a randomly initialized linear map wrapped in
+instance normalization, exactly the structure of RLinear-class models
+\cite{rlinear,revin}; it is linear in the normalized window, not in the
+raw input, and it is linear by construction, not a fitted linear model. The anchor is enabled per
 dataset (ETTh1, ETTh2, and Weather; Table~\ref{tab:hparams}); where it is
 disabled, the frequency branch remains fully active through its spectral
 encoder and head but carries no explicit linear pathway, so the
@@ -320,18 +339,21 @@ convex combination
 \mathbf{Y} = g \odot \mathbf{Y}_{\mathrm{time}} + (1 - g) \odot
 \mathbf{Y}_{\mathrm{freq}}, \qquad
 g = \sigma\!\big(\psi([\mathbf{f}_{\mathrm{time}};
-\mathbf{f}_{\mathrm{freq}}])\big) \in (0,1)^{C\times 1},
+\mathbf{f}_{\mathrm{freq}}])\big) \in (0,1)^{C\times 1}\!,\;\;
+\psi \text{ applied row-wise (per variate)},
 \label{eq:fusion}
 \end{equation}
 followed by RevIN de-normalization. Since $\mathbf{Y}$ lies elementwise
 between the branch forecasts, both domains retain an explicit prediction
-path, and the gate provides free per-sample attribution. The constraint
+path, and the gate value reports each branch's convex mixing weight ---
+a lightweight proxy for its contribution, not a causal attribution. The constraint
 is structural, not behavioral: $g$ is a sigmoid and can saturate near 0
 or 1, so one branch may contribute very little for some samples or
 datasets --- which is by design, as the ablations show the useful domain
 is dataset-dependent. $\psi$ is zero-initialized with bias $2.2$, so
-training starts at $g \approx 0.9$: the time branch's output is purely
-linear at initialization while the frequency branch is silent, and an
+training starts at $g \approx 0.9$: the time branch's output is linear
+(in the normalized window) at initialization while the frequency branch
+is silent, and an
 even $0.5/0.5$ mix would waste the highest-learning-rate epochs
 compensating for noise.
 
@@ -401,7 +423,11 @@ harness ship with the code. Main results (Tables~\ref{tab:main} and
 estimate a run-to-run noise floor of ${\approx}0.005$ MSE and treat all
 differences below it as ties throughout the paper. Reporting multi-seed
 mean~$\pm$~std for every entry is deferred to the camera-ready version;
-the released harness supports it directly (\texttt{--seeds}).
+the released code makes both requirements one command each: a multi-seed
+main-results runner (horizons $\times$ seeds with mean~$\pm$~std
+aggregation) and an in-framework DLinear baseline trained through the
+identical data pipeline, splits, schedule, and evaluation script, as a
+first step toward the unified baseline re-run.
 
 \begin{table}[t]
 \centering
@@ -506,8 +532,9 @@ exceeding the protocol look-back; this is not yet experimentally
 verified, and Sect.~\ref{sec:conclusion} lists the experiments that
 would test it. All comparisons are relative to results \emph{reported}
 in \cite{smamba} under the same protocol (Sect.~4.1), so we phrase our
-overall claim conservatively: \model{} is competitive with, and on
-several small benchmarks ahead of, the reported state of the art. The
+overall claim conservatively: \model{} is competitive with results
+reported under the same protocol, with its clearest margins on the small
+ETT benchmarks. The
 clearest margins appear on the small ETT datasets, where the linear
 anchors and deliberate capacity restraint matter most; there \model{}
 uses roughly $0.25$M parameters, two orders of magnitude fewer than
@@ -611,9 +638,10 @@ more --- consistent with the protocol look-back hiding part of the
 periodic structure (at 10-minute resolution the daily cycle spans 144
 samples ${>}\,L{=}96$; the same argument applies to weather's daily and
 traffic's weekly cycles). Beyond ablations, the fusion gate
-(Eq.~\ref{eq:fusion}) exposes per-sample, per-channel attribution of the
-two domains at no extra cost; a systematic study of gate behavior across
-datasets is left for the extended version.
+(Eq.~\ref{eq:fusion}) exposes per-sample, per-channel convex mixing
+weights at no extra cost --- a proxy for, not a causal measure of, branch
+contributions; a systematic study of gate behavior across datasets is
+left for the extended version.
 
 \textbf{Efficiency.} We make no measured efficiency claim in this version
 and note only two design properties: parameter counts span $0.09$M--%

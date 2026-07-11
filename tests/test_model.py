@@ -311,3 +311,19 @@ def test_training_step_reduces_loss():
         if first is None:
             first = loss.item()
     assert loss.item() < first
+
+
+def test_dlinear_baseline():
+    """The in-framework DLinear baseline must train through the same
+    pipeline: correct shapes and selectable via model.arch."""
+    from src.models.baselines import DLinearBaseline
+    from src.models import build_model
+
+    b, l, h, c = 2, 48, 12, 3
+    x = torch.randn(b, l, c)
+    m = DLinearBaseline(seq_len=l, pred_len=h)
+    assert m(x).shape == (b, h, c)
+    cfg = {"model": {"arch": "dlinear", "time_kernel_size": 25},
+           "data": {"seq_len": l, "pred_len": h}}
+    m2 = build_model(cfg, c)
+    assert m2(x).shape == (b, h, c)
