@@ -9,6 +9,8 @@
 \usepackage{booktabs}
 \usepackage{multirow}
 \usepackage{url}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta}
 
 \newcommand{\model}{DD-Mamba}
 \newcommand{\best}[1]{\textbf{#1}}
@@ -48,24 +50,24 @@ domain, and global periodic structure most compact in the frequency
 domain. Existing state-space (Mamba) forecasters model one view but
 not both, and deep forecasters often discard the simple linear maps that
 remain near state-of-the-art on several benchmarks. We
-present \model{}, a dual-domain architecture in which a time branch
-(trend--seasonal decomposition with a selective state-space encoder) and a
+present \model{}, a dual-domain architecture whose time branch
+(trend--seasonal decomposition with a selective state-space encoder) and
 frequency branch (learnable complex spectral filtering) each produce a
 forecast, fused by a learned convex gate that structurally preserves both
-prediction paths. Two principles drive its accuracy: (i)~\emph{linear anchoring} --- the time branch carries a
+prediction paths. Two principles drive accuracy: (i)~\emph{linear anchoring} --- the time branch carries a
 DLinear-style linear pathway, the frequency branch an optional FITS-style
 spectral map, and all nonlinear heads are zero-initialized, so at
 initialization the model reduces to a linear map of the
 instance-normalized window; and (ii)~\emph{capacity placement} --- a bidirectional
 Mamba over the \emph{variate} dimension carries the model on high-channel
-data and is disabled on small, few-channel data where it only overfits. On nine benchmarks under the look-back-96 protocol,
-\model{} reports the lowest average MSE on seven, improving over the
-reported S-Mamba results on five (up to 3.5\% on ETTh1), tying three within run-to-run noise, and trailing one, with far
-fewer parameters on small datasets. Ablations show clear
-benefits from the variate mixer and the linear anchor, while the
+data and is disabled on small, few-channel data where it only overfits. On nine benchmarks under the look-back-96 protocol (three
+seeds), \model{} reports the lowest mean MSE on seven, improving over the reported S-Mamba results on five (by up to
+17\% on Solar), tying three within run-to-run noise, and trailing one,
+with far fewer parameters on small datasets. Two-dataset ablations show
+the variate mixer as the one consistently validated component, while the
 frequency branch, temporal Mamba, and instance normalization are
-dataset-dependent --- the latter helps traffic yet hurts solar --- so
-components must be validated per dataset.
+dataset-dependent --- the latter helps weather and traffic yet hurts
+solar --- so components must be validated per dataset.
 \keywords{Time series forecasting \and State-space models \and Mamba \and
 Frequency domain \and Multivariate analysis}
 \end{abstract}
@@ -96,8 +98,8 @@ domain. Models committed to a single view --- attention or SSMs over time
 steps only, or spectral mixing only \cite{frets} --- systematically
 underuse the other.
 
-We address both issues with \model{}, a dual-domain forecaster organized
-around three ideas.
+We address both issues with \model{}, a dual-domain forecaster
+(Fig.~\ref{fig:arch}) organized around three ideas.
 
 \textbf{Dual branches with structurally preserved paths.} A time branch
 and a frequency branch each output a complete forecast; the model's
@@ -150,11 +152,12 @@ time where temporal microstructure matters, bidirectional Mamba over
 variates where cross-channel structure dominates, and neither where data
 is scarce (Sect.~\ref{sec:mixer}).
 \item The lowest reported average MSE on seven of nine standard
-benchmarks under the unified look-back-96 protocol, relative to results
-published under the same protocol, plus a released ablation harness and a
-case-study ablation --- including negative and dataset-dependent findings
-(instance normalization helps traffic by $+0.10$ MSE yet hurts solar by
-$0.016$) that we believe are as actionable as the positive ones
+benchmarks under the unified look-back-96 protocol (three-seed
+mean~$\pm$~std for every entry), relative to results published under the
+same protocol, plus a released ablation harness and multi-seed ablations
+on two datasets --- including negative and dataset-dependent findings
+(instance normalization helps weather and traffic yet hurts solar) that
+we believe are as actionable as the positive ones
 (Sect.~\ref{sec:experiments}).
 \end{enumerate}
 
@@ -192,6 +195,79 @@ uniformly.
 
 \section{Method}
 \label{sec:method}
+
+\begin{figure}[t]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  font=\scriptsize,
+  box/.style={draw, rounded corners=2pt, align=center, inner sep=3pt,
+              minimum height=5.5mm},
+  anchorbox/.style={box, fill=black!8},
+  zbox/.style={box, densely dashed},
+  opt/.style={box, dotted},
+  arr/.style={-{Stealth[length=1.6mm]}, semithick},
+  feat/.style={-{Stealth[length=1.6mm]}, densely dotted},
+  node distance=3.2mm and 5mm]
+
+% input / normalization
+\node[box] (inp) {$\mathbf{X}\in\mathbb{R}^{L\times C}$};
+\node[box, right=of inp] (revin) {RevIN\\(per dataset)};
+
+% time branch (top row)
+\node[box, above right=7mm and 6mm of revin] (dec) {decomp\\$\mathbf{X}_s,\mathbf{X}_t$};
+\node[anchorbox, above right=1.5mm and 4mm of dec] (dlin) {DLinear anchor\\$\mathbf{W}_s,\mathbf{W}_t$};
+\node[box, below=2.5mm of dlin] (mamba) {Mamba encoder\\(causal, over time)};
+\node[opt, right=4mm of mamba] (mixT) {variate mixer\\(BiMamba, opt.)};
+\node[zbox, right=4mm of mixT] (headT) {head $\phi_{\mathrm{time}}$\\(zero-init)};
+\node[circle, draw, inner sep=1pt, right=3.5mm of headT] (sumT) {$+$};
+
+% freq branch (bottom row)
+\node[box, below right=7mm and 6mm of revin] (fft) {rFFT +\\low-pass $\rho$};
+\node[anchorbox, below right=1.5mm and 4mm of fft] (fits) {FITS anchor $\mathbf{U}$\\(zero-init, opt.)};
+\node[box, above=2.5mm of fits] (spec) {spectral encoder\\(complex filter)};
+\node[opt, right=4mm of spec] (mixF) {variate mixer\\(BiMamba, opt.)};
+\node[zbox, right=4mm of mixF] (headF) {head $\phi_{\mathrm{freq}}$\\(zero-init)};
+\node[circle, draw, inner sep=1pt, right=3.5mm of headF] (sumF) {$+$};
+
+% fusion
+\node[box, right=19mm of revin, xshift=62mm] (gate)
+  {gate $g=\sigma(\psi([\mathbf{f}_{\mathrm{t}};\mathbf{f}_{\mathrm{f}}]))$};
+\node[box, right=4mm of gate] (fuse)
+  {$g\,\mathbf{Y}_{\mathrm{time}}$\\$+\,(1{-}g)\,\mathbf{Y}_{\mathrm{freq}}$};
+\node[box, below=3.2mm of fuse] (out) {de-norm $\rightarrow$\\$\mathbf{Y}\in\mathbb{R}^{H\times C}$};
+
+% edges
+\draw[arr] (inp) -- (revin);
+\draw[arr] (revin.north) |- (dec.west);
+\draw[arr] (revin.south) |- (fft.west);
+\draw[arr] (dec.east) |- (dlin.west);
+\draw[arr] (dec.east) |- (mamba.west);
+\draw[arr] (mamba) -- (mixT);
+\draw[arr] (mixT) -- (headT);
+\draw[arr] (headT) -- (sumT);
+\draw[arr] (dlin.east) -| (sumT.north);
+\draw[arr] (fft.east) |- (fits.west);
+\draw[arr] (fft.east) |- (spec.west);
+\draw[arr] (spec) -- (mixF);
+\draw[arr] (mixF) -- (headF);
+\draw[arr] (headF) -- (sumF);
+\draw[arr] (fits.east) -| (sumF.south);
+\draw[arr] (sumT.east) -| node[pos=0.25, above]{$\mathbf{Y}_{\mathrm{time}}$} (fuse.north);
+\draw[arr] (sumF.east) -| node[pos=0.25, below]{$\mathbf{Y}_{\mathrm{freq}}$} (fuse.south);
+\draw[feat] (mixT.south east) -- (gate.north west);
+\draw[feat] (mixF.north east) -- (gate.south west);
+\draw[arr] (gate) -- (fuse);
+\draw[arr] (fuse) -- (out);
+\end{tikzpicture}}
+\caption{\model{} overview. Both branches carry a linear anchor (shaded)
+and zero-initialized nonlinear heads (dashed), so at initialization the
+model reduces to a linear map of the instance-normalized window. Dotted
+boxes are per-dataset switches; dotted arrows carry branch features to
+the fusion gate, whose convex weight $g$ mixes the two branch forecasts.}
+\label{fig:arch}
+\end{figure}
+
 
 \subsection{Problem Formulation and Normalization}
 
@@ -418,16 +494,20 @@ with the selective scan forced to fp32 (Sect.~\ref{sec:anchors}). The
 decomposition kernel is 25; Mamba blocks use expansion 2 and depthwise
 convolution width 4 throughout. Table~\ref{tab:hparams} lists all
 per-dataset settings; complete configuration files and the ablation
-harness ship with the code. Main results (Tables~\ref{tab:main} and
-\ref{tab:horizons}) are single runs with seed 2024; from repeated runs we
-estimate a run-to-run noise floor of ${\approx}0.005$ MSE and treat all
-differences below it as ties throughout the paper. Reporting multi-seed
-mean~$\pm$~std for every entry is deferred to the camera-ready version;
-the released code makes both requirements one command each: a multi-seed
-main-results runner (horizons $\times$ seeds with mean~$\pm$~std
-aggregation) and an in-framework DLinear baseline trained through the
-identical data pipeline, splits, schedule, and evaluation script, as a
-first step toward the unified baseline re-run.
+harness ship with the code. All main results (Tables~\ref{tab:main} and
+\ref{tab:horizons}) are means over \emph{three seeds} (2024--2026);
+Table~\ref{tab:horizons} reports the per-entry standard deviations, whose
+maximum across all 36 dataset--horizon entries is $0.005$ MSE (Solar,
+$H{=}720$) with a typical value of $0.001$--$0.003$. This confirms the
+${\approx}0.005$ noise floor used for the tie rule empirically. As a
+first unified-framework baseline, we re-trained DLinear through the
+identical data pipeline, splits, schedule, and evaluation script on
+ETTh1 (three seeds): it averages $0.462$/$0.456$ MSE/MAE, within $0.006$
+of its quoted result ($0.456$/$0.452$), supporting the comparability of
+quoted numbers under this protocol; \model{}'s margin over it ($0.439$
+vs.\ $0.462$) is roughly six times the largest observed std. Re-running
+the remaining baselines in the same framework is left for the
+camera-ready appendix.
 
 \begin{table}[t]
 \centering
@@ -438,10 +518,9 @@ layers; $N$: SSM state size; $\rho$: spectral low-pass fraction
 --- when ``no'', the frequency branch remains fully active (rFFT, spectral
 encoder, forecast head) but carries no explicit linear pathway; IN:
 instance normalization (RevIN); do.: dropout; B: batch size; wd: weight
-decay. $^{\dagger}$All reported Solar results use IN~=~yes; the ablation
-in Sect.~\ref{sec:ablation} found IN~=~no better at $H{=}96$, and the
-released configuration adopts it, but the main tables are not updated
-until a full multi-horizon re-run (see text).}
+decay. $^{\dagger}$Solar adopts IN~=~no from the ablation finding
+(Sect.~\ref{sec:ablation}); its main results were re-measured under this
+configuration across all horizons and seeds.}
 \label{tab:hparams}
 \scriptsize
 \setlength{\tabcolsep}{3.2pt}
@@ -454,7 +533,7 @@ ETTh2 & 128 & Mamba (1) & 0 & 16 & 0.3 & yes & yes & $5{\cdot}10^{-4}$ & 32 & 0.
 ETTm1 & 128 & Mamba (2) & 0 & 16 & 0 & no & yes & $10^{-4}$ & 32 & 0.1/$10^{-4}$ \\
 ETTm2 & 128 & Mamba (1) & 0 & 16 & 0.2 & no & yes & $10^{-4}$ & 32 & 0.2/$2{\cdot}10^{-4}$ \\
 Weather & 256 & Mamba (2) & 2 & 16 & 0 & yes & yes & $2{\cdot}10^{-4}$ & 32 & 0.1/$10^{-4}$ \\
-Solar & 128 & Mamba (2) & 1 & 16 & 0 & no & yes$^{\dagger}$ & $5{\cdot}10^{-4}$ & 16 & 0.1/$10^{-4}$ \\
+Solar & 128 & Mamba (2) & 1 & 16 & 0 & no & no$^{\dagger}$ & $5{\cdot}10^{-4}$ & 16 & 0.1/$10^{-4}$ \\
 Electricity & 512 & MLP & 2 & 32 & 0 & no & yes & $5{\cdot}10^{-4}$ & 16 & 0.1/$10^{-4}$ \\
 Traffic & 512 & MLP & 2 & 32 & 0 & no & yes & $10^{-3}$ & 16 & 0.1/$10^{-4}$ \\
 Exchange & 64 & Mamba (1) & 0 & 8 & 0.5 & no & yes & $10^{-4}$ & 32 & 0.3/$5{\cdot}10^{-4}$ \\
@@ -468,7 +547,9 @@ Exchange & 64 & Mamba (1) & 0 & 8 & 0.5 & no & yes & $10^{-4}$ & 32 & 0.3/$5{\cd
 \centering
 \caption{Long-term forecasting results averaged over horizons
 $H \in \{96,192,336,720\}$ with look-back $L{=}96$ (MSE/MAE; lower is
-better). Baselines quoted from \cite{smamba}. \textbf{Bold} marks the
+better). \model{} entries are means over three seeds
+(Table~\ref{tab:horizons} reports per-horizon std). Baselines quoted from
+\cite{smamba}. \textbf{Bold} marks the
 best result \emph{and} every result within the run-to-run noise floor
 ($<0.005$, Sect.~\ref{sec:repro}) of it, treated as tied best;
 \underline{underline} marks the next-best result.}
@@ -480,53 +561,66 @@ best result \emph{and} every result within the run-to-run noise floor
 Dataset & \model{} (ours) & S-Mamba & iTransformer & PatchTST & DLinear & TimesNet \\
 \midrule
 ETTh1 & \best{0.439}/\best{0.434} & 0.455/0.450 & \second{0.454}/\second{0.447} & 0.469/0.454 & 0.456/0.452 & 0.458/0.450 \\
-ETTh2 & \best{0.375}/\best{0.402} & \second{0.381}/\best{0.405} & 0.383/\second{0.407} & 0.387/\second{0.407} & 0.559/0.515 & 0.414/0.427 \\
+ETTh2 & \best{0.374}/\best{0.401} & \second{0.381}/\best{0.405} & 0.383/\second{0.407} & 0.387/\second{0.407} & 0.559/0.515 & 0.414/0.427 \\
 ETTm1 & \best{0.386}/\best{0.398} & \second{0.398}/\second{0.405} & 0.407/0.410 & \best{0.387}/\best{0.400} & 0.403/0.407 & 0.400/0.406 \\
 ETTm2 & \best{0.280}/\best{0.325} & \second{0.288}/\second{0.332} & \second{0.288}/\second{0.332} & \best{0.281}/\best{0.326} & 0.350/0.401 & 0.291/0.333 \\
-Weather & \best{0.248}/\best{0.275} & \best{0.251}/\best{0.276} & \second{0.258}/\best{0.278} & 0.259/\second{0.281} & 0.265/0.317 & 0.259/0.287 \\
-Electricity & \best{0.169}/\best{0.265} & \best{0.170}/\best{0.265} & \second{0.178}/\second{0.270} & 0.205/0.290 & 0.212/0.300 & 0.192/0.295 \\
-Traffic & 0.439/\second{0.282} & \best{0.414}/\best{0.276} & \second{0.428}/\second{0.282} & 0.481/0.304 & 0.625/0.383 & 0.620/0.336 \\
+Weather & \best{0.248}/\best{0.276} & \best{0.251}/\best{0.276} & \second{0.258}/\best{0.278} & 0.259/\second{0.281} & 0.265/0.317 & 0.259/0.287 \\
+Electricity & \best{0.168}/\best{0.263} & \best{0.170}/\best{0.265} & \second{0.178}/\second{0.270} & 0.205/0.290 & 0.212/0.300 & 0.192/0.295 \\
+Traffic & 0.438/\second{0.281} & \best{0.414}/\best{0.276} & \second{0.428}/0.282 & 0.481/0.304 & 0.625/0.383 & 0.620/0.336 \\
 Exchange & 0.363/\best{0.405} & 0.367/\second{0.408} & \second{0.360}/\best{0.403} & 0.367/\best{0.404} & \best{0.354}/0.414 & 0.416/0.443 \\
-Solar & \best{0.228}/\second{0.267} & 0.240/0.273 & \second{0.233}/\best{0.262} & 0.270/0.307 & 0.330/0.401 & 0.301/0.319 \\
+Solar & \best{0.199}/\best{0.260} & 0.240/\second{0.273} & \second{0.233}/\best{0.262} & 0.270/0.307 & 0.330/0.401 & 0.301/0.319 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \begin{table}[t]
 \centering
-\caption{\model{} per-horizon results (MSE/MAE), look-back $L{=}96$.}
+\caption{\model{} per-horizon results (mean $\pm$ std over three
+seeds), look-back $L{=}96$.}
 \label{tab:horizons}
-\setlength{\tabcolsep}{4.2pt}
-\begin{tabular}{@{}lccccc@{}}
+\scriptsize
+\setlength{\tabcolsep}{3.0pt}
+\begin{tabular}{@{}llccccc@{}}
 \toprule
-Dataset & $H{=}96$ & $H{=}192$ & $H{=}336$ & $H{=}720$ & Avg \\
+Dataset & & $H{=}96$ & $H{=}192$ & $H{=}336$ & $H{=}720$ & Avg \\
 \midrule
-ETTh1 & 0.381/0.397 & 0.429/0.423 & 0.472/0.446 & 0.472/0.468 & 0.439/0.434 \\
-ETTh2 & 0.292/0.345 & 0.368/0.392 & 0.415/0.427 & 0.423/0.442 & 0.375/0.402 \\
-ETTm1 & 0.321/0.359 & 0.366/0.385 & 0.396/0.405 & 0.461/0.443 & 0.386/0.398 \\
-ETTm2 & 0.177/0.260 & 0.241/0.302 & 0.302/0.341 & 0.398/0.397 & 0.280/0.325 \\
-Weather & 0.162/0.207 & 0.212/0.254 & 0.267/0.293 & 0.349/0.347 & 0.248/0.275 \\
-Electricity & 0.140/0.235 & 0.157/0.252 & 0.175/0.271 & 0.203/0.300 & 0.169/0.265 \\
-Traffic & 0.404/0.267 & 0.423/0.275 & 0.443/0.283 & 0.484/0.302 & 0.439/0.282 \\
-Exchange & 0.086/0.206 & 0.179/0.301 & 0.329/0.415 & 0.858/0.699 & 0.363/0.405 \\
-Solar & 0.197/0.242 & 0.228/0.265 & 0.244/0.280 & 0.243/0.281 & 0.228/0.267 \\
+ETTh1 & MSE & $0.380{\scriptstyle\pm.001}$ & $0.431{\scriptstyle\pm.002}$ & $0.474{\scriptstyle\pm.004}$ & $0.470{\scriptstyle\pm.003}$ & 0.439 \\
+ & MAE & $0.396{\scriptstyle\pm.001}$ & $0.424{\scriptstyle\pm.001}$ & $0.447{\scriptstyle\pm.003}$ & $0.468{\scriptstyle\pm.001}$ & 0.434 \\
+ETTh2 & MSE & $0.293{\scriptstyle\pm.001}$ & $0.368{\scriptstyle\pm.003}$ & $0.414{\scriptstyle\pm.001}$ & $0.421{\scriptstyle\pm.001}$ & 0.374 \\
+ & MAE & $0.344{\scriptstyle\pm.002}$ & $0.391{\scriptstyle\pm.000}$ & $0.426{\scriptstyle\pm.000}$ & $0.441{\scriptstyle\pm.001}$ & 0.401 \\
+ETTm1 & MSE & $0.320{\scriptstyle\pm.001}$ & $0.366{\scriptstyle\pm.002}$ & $0.398{\scriptstyle\pm.001}$ & $0.462{\scriptstyle\pm.001}$ & 0.386 \\
+ & MAE & $0.359{\scriptstyle\pm.001}$ & $0.384{\scriptstyle\pm.001}$ & $0.406{\scriptstyle\pm.001}$ & $0.443{\scriptstyle\pm.001}$ & 0.398 \\
+ETTm2 & MSE & $0.177{\scriptstyle\pm.000}$ & $0.242{\scriptstyle\pm.002}$ & $0.302{\scriptstyle\pm.000}$ & $0.401{\scriptstyle\pm.003}$ & 0.280 \\
+ & MAE & $0.260{\scriptstyle\pm.001}$ & $0.303{\scriptstyle\pm.001}$ & $0.340{\scriptstyle\pm.000}$ & $0.398{\scriptstyle\pm.002}$ & 0.325 \\
+Weather & MSE & $0.162{\scriptstyle\pm.000}$ & $0.212{\scriptstyle\pm.000}$ & $0.269{\scriptstyle\pm.001}$ & $0.352{\scriptstyle\pm.003}$ & 0.248 \\
+ & MAE & $0.207{\scriptstyle\pm.001}$ & $0.255{\scriptstyle\pm.000}$ & $0.295{\scriptstyle\pm.002}$ & $0.349{\scriptstyle\pm.002}$ & 0.276 \\
+Electricity & MSE & $0.140{\scriptstyle\pm.000}$ & $0.157{\scriptstyle\pm.001}$ & $0.174{\scriptstyle\pm.001}$ & $0.200{\scriptstyle\pm.004}$ & 0.168 \\
+ & MAE & $0.235{\scriptstyle\pm.000}$ & $0.252{\scriptstyle\pm.001}$ & $0.271{\scriptstyle\pm.001}$ & $0.296{\scriptstyle\pm.004}$ & 0.263 \\
+Traffic & MSE & $0.402{\scriptstyle\pm.002}$ & $0.424{\scriptstyle\pm.001}$ & $0.441{\scriptstyle\pm.001}$ & $0.485{\scriptstyle\pm.003}$ & 0.438 \\
+ & MAE & $0.266{\scriptstyle\pm.001}$ & $0.275{\scriptstyle\pm.001}$ & $0.283{\scriptstyle\pm.000}$ & $0.301{\scriptstyle\pm.000}$ & 0.281 \\
+Exchange & MSE & $0.086{\scriptstyle\pm.000}$ & $0.179{\scriptstyle\pm.001}$ & $0.330{\scriptstyle\pm.002}$ & $0.857{\scriptstyle\pm.001}$ & 0.363 \\
+ & MAE & $0.205{\scriptstyle\pm.000}$ & $0.301{\scriptstyle\pm.000}$ & $0.416{\scriptstyle\pm.002}$ & $0.699{\scriptstyle\pm.000}$ & 0.405 \\
+Solar & MSE & $0.180{\scriptstyle\pm.004}$ & $0.195{\scriptstyle\pm.005}$ & $0.207{\scriptstyle\pm.001}$ & $0.212{\scriptstyle\pm.005}$ & 0.199 \\
+ & MAE & $0.237{\scriptstyle\pm.003}$ & $0.259{\scriptstyle\pm.003}$ & $0.270{\scriptstyle\pm.001}$ & $0.274{\scriptstyle\pm.005}$ & 0.260 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 Table~\ref{tab:main} summarizes averages over the four horizons;
-Table~\ref{tab:horizons} reports \model{} per horizon. Applying the
-noise-floor tie rule consistently, \model{} reports the lowest average
-MSE on seven of the nine datasets: the margin is clear on ETTh1
-($-0.015$), ETTh2 ($-0.006$), ETTm1 ($-0.011$ over S-Mamba, though only
-$-0.001$ --- a tie --- over PatchTST), ETTm2 (likewise tied with
-PatchTST), and Solar ($-0.005$, exactly at the noise floor, so we do not
-call it significant without multi-seed evidence), while on Weather
-($-0.003$) and Electricity ($-0.001$) the lead over S-Mamba is below the
-floor and the two methods should be read as tied. \model{} remains
+Table~\ref{tab:horizons} reports \model{} per horizon with per-entry
+standard deviations. Applying the noise-floor tie rule consistently,
+\model{} reports the lowest average MSE on seven of the nine datasets.
+The margin over the best baseline is clear on Solar ($0.199$ vs.\
+iTransformer's $0.233$; $-17\%$ vs.\ S-Mamba, roughly seven times the
+largest observed std --- measured with the instance-normalization-free
+configuration from Sect.~\ref{sec:ablation}), on ETTh1 ($-0.015$), and
+on ETTh2 ($-0.007$); on ETTm1/ETTm2 the margin over S-Mamba is clear
+($-0.012$/$-0.008$) but the gap to PatchTST is $0.001$ --- a tie; on
+Weather ($-0.003$) and Electricity ($-0.002$) the lead over S-Mamba is
+below the floor and the methods should be read as tied. \model{} remains
 competitive on Exchange --- a near random-walk dataset where all methods
 cluster within $0.013$ MSE and plain DLinear is best, $0.009$ ahead of
-\model{} --- and lags S-Mamba on Traffic by $+0.025$ MSE. We
+\model{} --- and lags S-Mamba on Traffic by $+0.024$ MSE. We
 \emph{hypothesize} the traffic deficit stems from the weekly cycle
 exceeding the protocol look-back; this is not yet experimentally
 verified, and Sect.~\ref{sec:conclusion} lists the experiments that
@@ -545,14 +639,14 @@ variate-attention models configured for those datasets.
 
 We release an ablation harness in which every variant flips exactly one
 switch of a dataset's full configuration, holding the split, schedule,
-seeds, and all other hyperparameters fixed. Here we report its complete
-output on one dataset (Solar-Energy, $H{=}96$) together with two targeted
-probes on other datasets that changed the released configurations. We
-state the scope plainly: these are single-seed, single-horizon runs, and
-we therefore only interpret deltas well above the ${\approx}0.005$ MSE
-noise floor (Sect.~\ref{sec:repro}); sub-floor deltas (e.g., the
-Mamba-vs.-MLP time encoder on solar) are reported as ties, and a full
-multi-seed ablation matrix across datasets and horizons is deferred to
+seeds, and all other hyperparameters fixed. We report its complete output
+on two datasets --- Solar-Energy ($H{=}96$, single seed,
+Table~\ref{tab:ablation}) and Weather ($H{=}96$, \emph{three seeds},
+Table~\ref{tab:ablation_weather}) --- together with targeted probes on
+traffic and ETT that changed the released configurations. Deltas are
+interpreted against the empirical noise floor of
+Sect.~\ref{sec:repro}; sub-floor deltas are reported as ties. Extending
+the multi-seed matrix to the remaining datasets and horizons is left for
 the camera-ready version.
 
 \begin{table}[t]
@@ -577,12 +671,14 @@ full & 0.197 & --- & reference \\
 \end{tabular}
 \end{table}
 
-Table~\ref{tab:ablation} isolates each component on Solar-Energy. For
-consistency with the main results, the ``full'' configuration here is
-exactly the one behind Tables~\ref{tab:main}--\ref{tab:horizons}
-(IN~=~yes; its $0.197$ MSE matches the Solar $H{=}96$ entry of
-Table~\ref{tab:horizons}); the IN~=~no finding below post-dates the main
-measurements and is adopted only in the released configuration.
+Table~\ref{tab:ablation} isolates each component on Solar-Energy. The
+``full'' configuration here predates the IN~=~no finding below (it uses
+IN~=~yes, scoring $0.197$); acting on that finding, the final Solar
+configuration disables instance normalization, and the main results
+(Tables~\ref{tab:main}--\ref{tab:horizons}) were re-measured under it
+across all horizons and seeds --- its $H{=}96$ mean of
+$0.180{\scriptstyle\pm.004}$ matches this table's w/o-instance-norm
+variant ($0.181$), closing the loop between ablation and main results.
 
 The evidence is differentiated, and we read it as such. \emph{Clear
 contributors} (well above the noise floor): the variate mixer ($+0.022$
@@ -601,6 +697,50 @@ on weather/traffic; the temporal SSM is dispensable exactly where the
 variate mixer carries the signal). Multi-dataset, multi-seed evidence is
 required before component-level claims generalize, and the released
 harness is built to produce it.
+
+A second complete run of the harness on Weather ($H{=}96$, three seeds;
+Table~\ref{tab:ablation_weather}) provides exactly that evidence and
+sharpens the picture. Two components are clear contributors on weather:
+instance normalization ($+0.0161{\scriptstyle\pm.004}$ when removed ---
+the \emph{opposite} sign of solar, now established with multi-seed
+statistics) and the variate mixer ($+0.0104{\scriptstyle\pm.002}$,
+consistent with solar). The temporal Mamba, a tie on solar, shows a small
+but statistically significant benefit on weather
+($+0.0027$, ${>}5\sigma$ given stds of $.0005$/$.0003$) --- matching the
+analysis that weather's accuracy rests on local temporal dynamics. The
+remaining components (single branches, FITS, gate vs.\ average, spectral
+encoder type) are within one--two std of the full model on weather.
+Across the two studies the consistent findings are: the variate mixer is
+the one component validated on both datasets; instance normalization is
+strongly dataset-dependent in \emph{both} directions; and the value of
+the remaining components varies with dataset structure --- which is the
+architectural argument for shipping them as per-dataset switches rather
+than universal defaults.
+
+\begin{table}[t]
+\centering
+\caption{Component ablation on Weather ($H{=}96$, mean $\pm$ std over
+three seeds). Each variant flips exactly one switch of the full
+configuration.}
+\label{tab:ablation_weather}
+\scriptsize
+\begin{tabular}{@{}lccl@{}}
+\toprule
+Variant & MSE & $\Delta$MSE (mean) & Component isolated \\
+\midrule
+full & $0.1620{\scriptstyle\pm.000}$ & --- & reference \\
+\;\;w/o instance norm & $0.1781{\scriptstyle\pm.004}$ & $+0.0161$ & RevIN \\
+\;\;w/o channel mixer & $0.1724{\scriptstyle\pm.002}$ & $+0.0104$ & cross-variate Mamba mixing \\
+\;\;Mamba$\rightarrow$MLP over time & $0.1647{\scriptstyle\pm.001}$ & $+0.0027$ & selective scan (time) \\
+\;\;w/o linear backbone & $0.1631{\scriptstyle\pm.001}$ & $+0.0011$ & DLinear anchor (time) \\
+\;\;time branch only & $0.1628{\scriptstyle\pm.001}$ & $+0.0007$ & frequency branch removed \\
+\;\;w/o FITS anchor & $0.1627{\scriptstyle\pm.002}$ & $+0.0007$ & spectral linear anchor \\
+\;\;freq branch only & $0.1626{\scriptstyle\pm.001}$ & $+0.0006$ & time branch removed \\
+\;\;freq Mamba encoder & $0.1626{\scriptstyle\pm.002}$ & $+0.0006$ & spectral encoder type \\
+\;\;sum fusion & $0.1622{\scriptstyle\pm.001}$ & $+0.0001$ & learned gate $\rightarrow$ average \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \textbf{Normalization is a per-dataset decision.} The same probe that
 revealed RevIN \emph{hurting} solar ($-0.016$ MSE when removed) shows the
@@ -665,21 +805,21 @@ dataset characteristics rather than uniformly. Under the unified
 look-back-96 protocol, this recipe achieves the lowest reported average
 MSE on seven of nine standard benchmarks and remains competitive on
 Exchange, while still lagging behind S-Mamba on Traffic, with parameter
-counts spanning $0.09$M to $19.7$M across datasets. The case-study
-ablation shows clear benefits from the variate mixer, the linear anchor,
-and the time branch, finds the frequency branch and temporal SSM
-dataset-dependent, and surfaces a transferable methodological caution:
+counts spanning $0.09$M to $19.7$M across datasets. Two-dataset,
+partly multi-seed ablations validate the variate mixer consistently,
+find the linear anchor, time branch, and temporal SSM helpful on some
+datasets and neutral on others, and surface a transferable
+methodological caution:
 instance normalization can help or hurt substantially depending on
 whether apparent nonstationarity is real shift or periodic structure.
 
-Limitations remain. Methodologically: main results are single-seed (we
-treat sub-noise-floor differences as ties, and multi-seed
-mean~$\pm$~std reporting is deferred to the camera-ready), the complete
-ablation suite is reported on one dataset and horizon, and baseline
+Limitations remain. Methodologically: the complete ablation suite covers
+two datasets at one horizon (one of them multi-seed), and baseline
 numbers are quoted from \cite{smamba} under an identical protocol rather
-than re-run in a unified framework --- so our comparative claims should
-be read as ``competitive with reported results under the same
-protocol''. Architecturally: the fixed look-back of 96 hides cycles
+than re-run in a unified framework --- our in-framework DLinear re-run on
+ETTh1 (Sect.~\ref{sec:repro}) is a first step, and reproducing the
+remaining baselines is planned --- so our comparative claims should be
+read as ``competitive with reported results under the same protocol''. Architecturally: the fixed look-back of 96 hides cycles
 longer than the window (weather's daily and traffic's weekly periods); we
 hypothesize this explains the remaining deficit on traffic, a claim to be
 tested with longer look-backs (168/336), calendar covariates, and a
