@@ -163,7 +163,7 @@ we believe are as actionable as the positive ones
 
 \section{Related Work}
 
-\textbf{Transformer forecasters.} Informer \cite{informer}, Autoformer
+\paragraph{Transformer forecasters.} Informer \cite{informer}, Autoformer
 \cite{autoformer} and FEDformer \cite{fedformer} adapt attention to long
 sequences via sparsity, decomposition, and frequency-domain mixing
 respectively. PatchTST \cite{patchtst} treats sub-series patches as tokens
@@ -174,7 +174,7 @@ benchmarks. \model{} adopts the variate-mixing insight but implements it
 with linear-time bidirectional SSMs and, unlike these works, couples it to
 an explicit frequency branch and linear anchors.
 
-\textbf{Linear and frequency-domain models.} DLinear/NLinear \cite{dlinear}
+\paragraph{Linear and frequency-domain models.} DLinear/NLinear \cite{dlinear}
 showed that decomposition plus a linear map rivals Transformers,
 particularly on ETT; RLinear \cite{rlinear} added reversible instance
 normalization \cite{revin}. FreTS \cite{frets} learns MLPs in the
@@ -184,7 +184,7 @@ cost. \model{} does not compete with these models --- it \emph{contains}
 them: each branch carries a linear pathway of its domain's model family,
 and the deep machinery is trained as a correction on top.
 
-\textbf{State-space models.} Mamba \cite{mamba} introduced selective SSMs
+\paragraph{State-space models.} Mamba \cite{mamba} introduced selective SSMs
 with input-dependent dynamics and linear-time scans. In forecasting,
 S-Mamba \cite{smamba} applies bidirectional Mamba over variate tokens with
 a linear temporal embedding, and further works explore frequency-domain
@@ -333,6 +333,7 @@ accumulation overflow in half precision, which silently destroys training
 (observed as NaN validation losses that exhaust early-stopping patience).
 
 \subsection{Frequency Branch: Spectral Filtering and a FITS Anchor}
+\label{sec:freq}
 
 The frequency branch applies the real FFT along time,
 $\mathbf{Z} = \mathrm{rFFT}(\tilde{\mathbf{X}}) \in
@@ -361,6 +362,7 @@ samples are the branch's linear spectral forecast:
 \underbrace{\mathrm{irFFT}_{L+H}(\mathbf{Z}\mathbf{U}^{\top})[\,L{:}\,]}_{\text{linear-in-frequency}}
 \; + \; \phi_{\mathrm{freq}}(\mathbf{f}_{\mathrm{freq}}),
 \qquad \mathbf{U}, \phi_{\mathrm{freq}} \equiv \mathbf{0} \text{ at init.}
+\label{eq:fits}
 \end{equation}
 This pathway \emph{parameterizes} the FITS \cite{fits} family --- any
 linear-in-frequency forecaster of the low-passed spectrum is reachable ---
@@ -445,8 +447,9 @@ stopping monitors validation loss with the best checkpoint restored.
 \label{sec:experiments}
 
 \subsection{Setup}
+\label{sec:setup}
 
-\textbf{Datasets and protocol.} We evaluate on nine standard benchmarks
+\paragraph{Datasets and protocol.} We evaluate on nine standard benchmarks
 (Table~\ref{tab:datasets}) under the unified protocol of
 \cite{itransformer,smamba}: look-back $L{=}96$ for all datasets and
 horizons $H \in \{96, 192, 336, 720\}$; ETT uses the canonical 12/4/4-month
@@ -473,7 +476,7 @@ Exchange & 8 & 7{,}588 & 1 day & off & 0.09M \\
 \end{tabular}
 \end{table}
 
-\textbf{Baselines.} We compare against the strongest published results
+\paragraph{Baselines.} We compare against the strongest published results
 under the same protocol: the state-space forecaster S-Mamba \cite{smamba},
 iTransformer \cite{itransformer}, PatchTST \cite{patchtst}, DLinear
 \cite{dlinear}, and TimesNet \cite{timesnet}. Baseline numbers are quoted
@@ -514,7 +517,7 @@ camera-ready appendix.
 \caption{Per-dataset hyperparameters. $d$: model width; time enc.:
 time-branch encoder (Mamba layers in parentheses); $M$: variate-mixer
 layers; $N$: SSM state size; $\rho$: spectral low-pass fraction
-(Sect.~3.3); FITS: the \emph{optional} spectral linear anchor of Eq.~(5)
+(Sect.~\ref{sec:freq}); FITS: the \emph{optional} spectral linear anchor of Eq.~\eqref{eq:fits}
 --- when ``no'', the frequency branch remains fully active (rFFT, spectral
 encoder, forecast head) but carries no explicit linear pathway; IN:
 instance normalization (RevIN); do.: dropout; B: batch size; wd: weight
@@ -625,14 +628,14 @@ cluster within $0.013$ MSE and plain DLinear is best, $0.009$ ahead of
 exceeding the protocol look-back; this is not yet experimentally
 verified, and Sect.~\ref{sec:conclusion} lists the experiments that
 would test it. All comparisons are relative to results \emph{reported}
-in \cite{smamba} under the same protocol (Sect.~4.1), so we phrase our
+in \cite{smamba} under the same protocol (Sect.~\ref{sec:setup}), so we phrase our
 overall claim conservatively: \model{} is competitive with results
-reported under the same protocol, with its clearest margins on the small
-ETT benchmarks. The
-clearest margins appear on the small ETT datasets, where the linear
-anchors and deliberate capacity restraint matter most; there \model{}
-uses roughly $0.25$M parameters, two orders of magnitude fewer than
-variate-attention models configured for those datasets.
+reported under the same protocol. Its largest margin is on Solar, driven
+by per-dataset normalization; the next largest are on the small ETT
+datasets, where the linear anchors and deliberate capacity restraint
+matter most --- there \model{} uses roughly $0.25$M parameters, two
+orders of magnitude fewer than variate-attention models configured for
+those datasets.
 
 \subsection{Component Ablations: A Case Study}
 \label{sec:ablation}
@@ -742,7 +745,7 @@ full & $0.1620{\scriptstyle\pm.000}$ & --- & reference \\
 \end{tabular}
 \end{table}
 
-\textbf{Normalization is a per-dataset decision.} The same probe that
+\paragraph{Normalization is a per-dataset decision.} The same probe that
 revealed RevIN \emph{hurting} solar ($-0.016$ MSE when removed) shows the
 opposite on traffic: removing instance normalization degrades traffic from
 $0.405$ to $0.505$ MSE at $H{=}96$. The two datasets look alike on the
@@ -755,7 +758,7 @@ instance normalization absorbs. We therefore ship normalization as a
 verified per-dataset switch and caution against transferring normalization
 conclusions across datasets.
 
-\textbf{Negative results that shaped the design.} Deepening the variate
+\paragraph{Negative results that shaped the design.} Deepening the variate
 mixer on traffic from two to four layers ($19.7\mathrm{M} \rightarrow
 37.9$M parameters) produced no accuracy gain, so the released
 configuration keeps two layers; our working \emph{hypothesis} for the
@@ -770,7 +773,7 @@ configurations disable it.
 
 \subsection{Analysis}
 
-\textbf{Where each domain wins.} The branch-only ablations
+\paragraph{Where each domain wins.} The branch-only ablations
 (Table~\ref{tab:ablation}) quantify the two domains directly on solar:
 removing the time branch costs $+0.012$ MSE while removing the frequency
 branch costs $+0.002$, i.e., both contribute but the time view carries
@@ -778,12 +781,12 @@ more --- consistent with the protocol look-back hiding part of the
 periodic structure (at 10-minute resolution the daily cycle spans 144
 samples ${>}\,L{=}96$; the same argument applies to weather's daily and
 traffic's weekly cycles). Beyond ablations, the fusion gate
-(Eq.~\ref{eq:fusion}) exposes per-sample, per-channel convex mixing
+(Eq.~\eqref{eq:fusion}) exposes per-sample, per-channel convex mixing
 weights at no extra cost --- a proxy for, not a causal measure of, branch
 contributions; a systematic study of gate behavior across datasets is
 left for the extended version.
 
-\textbf{Efficiency.} We make no measured efficiency claim in this version
+\paragraph{Efficiency.} We make no measured efficiency claim in this version
 and note only two design properties: parameter counts span $0.09$M--%
 $19.7$M across datasets (Table~\ref{tab:datasets}), sized to each
 dataset rather than fixed; and the bidirectional variate mixer scans $C$
@@ -839,67 +842,67 @@ Code, configurations, and the ablation harness are available at
 
 \begin{thebibliography}{99}
 
-\bibitem{informer}
-Zhou, H., Zhang, S., Peng, J., Zhang, S., Li, J., Xiong, H., Zhang, W.:
-Informer: Beyond efficient transformer for long sequence time-series
-forecasting. In: AAAI. pp. 11106--11115 (2021)
-
-\bibitem{autoformer}
-Wu, H., Xu, J., Wang, J., Long, M.: Autoformer: Decomposition transformers
-with auto-correlation for long-term series forecasting. In: NeurIPS.
-pp. 22419--22430 (2021)
-
-\bibitem{fedformer}
-Zhou, T., Ma, Z., Wen, Q., Wang, X., Sun, L., Jin, R.: FEDformer:
-Frequency enhanced decomposed transformer for long-term series
-forecasting. In: ICML. pp. 27268--27286 (2022)
-
-\bibitem{patchtst}
-Nie, Y., Nguyen, N.H., Sinthong, P., Kalagnanam, J.: A time series is
-worth 64 words: Long-term forecasting with transformers. In: ICLR (2023)
-
-\bibitem{itransformer}
-Liu, Y., Hu, T., Zhang, H., Wu, H., Wang, S., Ma, L., Long, M.:
-iTransformer: Inverted transformers are effective for time series
-forecasting. In: ICLR (2024)
-
-\bibitem{dlinear}
-Zeng, A., Chen, M., Zhang, L., Xu, Q.: Are transformers effective for time
-series forecasting? In: AAAI. pp. 11121--11128 (2023)
-
-\bibitem{rlinear}
-Li, Z., Qi, S., Li, Y., Xu, Z.: Revisiting long-term time series
-forecasting: An investigation on linear mapping. arXiv:2305.10721 (2023)
+\bibitem{mamba}
+Gu, A., Dao, T.: Mamba: Linear-time sequence modeling with selective state
+spaces. arXiv:2312.00752 (2023)
 
 \bibitem{revin}
 Kim, T., Kim, J., Tae, Y., Park, C., Choi, J.H., Choo, J.: Reversible
 instance normalization for accurate time-series forecasting against
 distribution shift. In: ICLR (2022)
 
-\bibitem{frets}
-Yi, K., Zhang, Q., Fan, W., Wang, S., Wang, P., He, H., An, N., Lian, D.,
-Cao, L., Niu, Z.: Frequency-domain MLPs are more effective learners in
-time series forecasting. In: NeurIPS (2023)
+\bibitem{rlinear}
+Li, Z., Qi, S., Li, Y., Xu, Z.: Revisiting long-term time series
+forecasting: An investigation on linear mapping. arXiv:2305.10721 (2023)
 
-\bibitem{fits}
-Xu, Z., Zeng, A., Xu, Q.: FITS: Modeling time series with 10k parameters.
-In: ICLR (2024)
-
-\bibitem{mamba}
-Gu, A., Dao, T.: Mamba: Linear-time sequence modeling with selective state
-spaces. arXiv:2312.00752 (2023)
-
-\bibitem{smamba}
-Wang, Z., Kong, F., Feng, S., Wang, M., Zhao, H., Wang, D., Zhang, Y.:
-Is Mamba effective for time series forecasting? Neurocomputing (2025)
+\bibitem{itransformer}
+Liu, Y., Hu, T., Zhang, H., Wu, H., Wang, S., Ma, L., Long, M.:
+iTransformer: Inverted transformers are effective for time series
+forecasting. In: ICLR (2024)
 
 \bibitem{fmamba}
 Ma, S., Kang, Y., Bai, P., Zhao, Y.-B.: FMamba: Mamba based on fast-attention
 for multivariate time-series forecasting. arXiv:2407.14814 (2024)
 
+\bibitem{patchtst}
+Nie, Y., Nguyen, N.H., Sinthong, P., Kalagnanam, J.: A time series is
+worth 64 words: Long-term forecasting with transformers. In: ICLR (2023)
+
+\bibitem{smamba}
+Wang, Z., Kong, F., Feng, S., Wang, M., Zhao, H., Wang, D., Zhang, Y.:
+Is Mamba effective for time series forecasting? Neurocomputing (2025)
+
+\bibitem{autoformer}
+Wu, H., Xu, J., Wang, J., Long, M.: Autoformer: Decomposition transformers
+with auto-correlation for long-term series forecasting. In: NeurIPS.
+pp. 22419--22430 (2021)
+
 \bibitem{timesnet}
 Wu, H., Hu, T., Liu, Y., Zhou, H., Wang, J., Long, M.: TimesNet: Temporal
 2D-variation modeling for general time series analysis. In: ICLR (2023)
+
+\bibitem{fits}
+Xu, Z., Zeng, A., Xu, Q.: FITS: Modeling time series with 10k parameters.
+In: ICLR (2024)
+
+\bibitem{frets}
+Yi, K., Zhang, Q., Fan, W., Wang, S., Wang, P., He, H., An, N., Lian, D.,
+Cao, L., Niu, Z.: Frequency-domain MLPs are more effective learners in
+time series forecasting. In: NeurIPS (2023)
+
+\bibitem{dlinear}
+Zeng, A., Chen, M., Zhang, L., Xu, Q.: Are transformers effective for time
+series forecasting? In: AAAI. pp. 11121--11128 (2023)
+
+\bibitem{informer}
+Zhou, H., Zhang, S., Peng, J., Zhang, S., Li, J., Xiong, H., Zhang, W.:
+Informer: Beyond efficient transformer for long sequence time-series
+forecasting. In: AAAI. pp. 11106--11115 (2021)
+
+\bibitem{fedformer}
+Zhou, T., Ma, Z., Wen, Q., Wang, X., Sun, L., Jin, R.: FEDformer:
+Frequency enhanced decomposed transformer for long-term series
+forecasting. In: ICML. pp. 27268--27286 (2022)
 
 \end{thebibliography}
 
