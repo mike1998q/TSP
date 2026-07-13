@@ -62,6 +62,7 @@ class DualDomainForecaster(nn.Module):
         channel_mixer_layers: int = 1,
         use_revin: bool = True,
         time_linear_backbone: bool = True,
+        zero_init: bool = True,
     ):
         super().__init__()
         self.use_revin = use_revin
@@ -84,6 +85,7 @@ class DualDomainForecaster(nn.Module):
             use_official_mamba=use_official_mamba,
             channel_mixer_layers=channel_mixer_layers,
             use_linear_backbone=time_linear_backbone,
+            zero_init=zero_init,
         )
         self.freq_branch = FreqBranch(
             seq_len=seq_len,
@@ -101,8 +103,10 @@ class DualDomainForecaster(nn.Module):
             mamba_expand=mamba_expand,
             use_official_mamba=use_official_mamba,
             channel_mixer_layers=channel_mixer_layers,
+            zero_init=zero_init,
         )
-        self.fusion = ForecastFusion(d_model=d_model, pred_len=pred_len, mode=fusion)
+        self.fusion = ForecastFusion(d_model=d_model, pred_len=pred_len,
+                                     mode=fusion, zero_init=zero_init)
 
     def forward(
         self, x: torch.Tensor, return_components: bool = False
@@ -183,4 +187,5 @@ def build_model(cfg: dict, n_channels: int):
         channel_mixer_layers=mcfg.get("channel_mixer_layers", 1),
         use_revin=mcfg.get("use_revin", True),
         time_linear_backbone=mcfg.get("time_linear_backbone", True),
+        zero_init=mcfg.get("zero_init", True),
     )

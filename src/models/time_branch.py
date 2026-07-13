@@ -90,6 +90,7 @@ class TimeBranch(nn.Module):
         use_official_mamba: bool = True,
         channel_mixer_layers: int = 0,
         use_linear_backbone: bool = True,
+        zero_init: bool = True,
     ):
         super().__init__()
         self.encoder_kind = encoder
@@ -130,8 +131,9 @@ class TimeBranch(nn.Module):
             nn.Dropout(head_dropout),
             nn.Linear(d_model, pred_len),
         )
-        nn.init.zeros_(self.head[-1].weight)
-        nn.init.zeros_(self.head[-1].bias)
+        if zero_init:
+            nn.init.zeros_(self.head[-1].weight)
+            nn.init.zeros_(self.head[-1].bias)
 
         if encoder == "mamba":
             self.encoder = MambaEncoder(

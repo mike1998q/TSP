@@ -46,6 +46,8 @@ VARIANTS = {
                  {("model", "use_revin"): False}),
     "no_linear_backbone": ("time branch without its DLinear backbone",
                            {("model", "time_linear_backbone"): False}),
+    "rand_init": ("standard random init instead of zero-init heads/gate",
+                  {("model", "zero_init"): False}),
     "no_fits": ("frequency branch without the FITS spectral backbone",
                 {("model", "freq_backbone"): "none"}),
     "with_fits": ("add the FITS spectral backbone",
@@ -68,7 +70,7 @@ def default_variants(cfg: dict) -> list:
     """Pick the variants that actually toggle something in this config."""
     m = cfg["model"]
     names = ["full", "time_only", "freq_only", "fusion_sum",
-             "no_revin", "no_linear_backbone"]
+             "no_revin", "no_linear_backbone", "rand_init"]
     names.append("no_fits" if m.get("freq_backbone", "none") == "fits" else "with_fits")
     names.append("time_mlp" if m.get("time_encoder", "mamba") == "mamba" else "time_mamba")
     if m.get("channel_mixer_layers", 1) > 0:

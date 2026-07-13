@@ -33,7 +33,8 @@ class ForecastFusion(nn.Module):
 
     GATE_BIAS_INIT = 2.2  # sigmoid(2.2) ~ 0.90
 
-    def __init__(self, d_model: int, pred_len: int, mode: str = "gated"):
+    def __init__(self, d_model: int, pred_len: int, mode: str = "gated",
+                 zero_init: bool = True):
         super().__init__()
         self.mode = mode
         if mode == "gated":
@@ -43,15 +44,17 @@ class ForecastFusion(nn.Module):
                 nn.Linear(d_model, 1),
                 nn.Sigmoid(),
             )
-            nn.init.zeros_(self.gate[2].weight)
-            nn.init.constant_(self.gate[2].bias, self.GATE_BIAS_INIT)
+            if zero_init:
+                nn.init.zeros_(self.gate[2].weight)
+                nn.init.constant_(self.gate[2].bias, self.GATE_BIAS_INIT)
         elif mode == "concat":
             self.gate = nn.Sequential(
                 nn.Linear(2 * d_model, pred_len),
                 nn.Sigmoid(),
             )
-            nn.init.zeros_(self.gate[0].weight)
-            nn.init.constant_(self.gate[0].bias, self.GATE_BIAS_INIT)
+            if zero_init:
+                nn.init.zeros_(self.gate[0].weight)
+                nn.init.constant_(self.gate[0].bias, self.GATE_BIAS_INIT)
         elif mode in ("sum", "time_only", "freq_only"):
             pass
         else:

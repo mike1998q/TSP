@@ -69,6 +69,7 @@ class FreqBranch(nn.Module):
         use_official_mamba: bool = True,
         channel_mixer_layers: int = 0,
         backbone: str = "none",
+        zero_init: bool = True,
     ):
         super().__init__()
         self.seq_len = seq_len
@@ -88,9 +89,10 @@ class FreqBranch(nn.Module):
         if backbone == "fits":
             self.n_out_freq = (seq_len + pred_len) // 2 + 1
             self.spec_backbone = ComplexLinear(self.n_freq, self.n_out_freq)
-            for lin in (self.spec_backbone.wr, self.spec_backbone.wi):
-                nn.init.zeros_(lin.weight)
-                nn.init.zeros_(lin.bias)
+            if zero_init:
+                for lin in (self.spec_backbone.wr, self.spec_backbone.wi):
+                    nn.init.zeros_(lin.weight)
+                    nn.init.zeros_(lin.bias)
         elif backbone == "none":
             self.spec_backbone = None
         else:
@@ -142,7 +144,7 @@ class FreqBranch(nn.Module):
             nn.Dropout(head_dropout),
             nn.Linear(d_model, pred_len),
         )
-        if self.spec_backbone is not None:
+        if self.spec_backbone is not None and zero_init:
             # With a linear backbone present, the deep head becomes a
             # correction: zero-init so the branch starts as pure-linear
             # (mirroring the time branch's initialization).

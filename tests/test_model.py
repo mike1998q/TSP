@@ -327,3 +327,20 @@ def test_dlinear_baseline():
            "data": {"seq_len": l, "pred_len": h}}
     m2 = build_model(cfg, c)
     assert m2(x).shape == (b, h, c)
+
+
+def test_zero_init_switch():
+    """zero_init=False must produce standard random init: the freq branch is
+    no longer silent and the time branch no longer equals its backbone."""
+    torch.manual_seed(0)
+    b, l, h, c = 2, 48, 12, 3
+    x = torch.randn(b, l, c)
+    common = dict(seq_len=l, pred_len=h, n_channels=c, d_model=16,
+                  freq_backbone="fits", channel_mixer_layers=0, use_revin=False)
+    silent = DualDomainForecaster(zero_init=True, **common).eval()
+    rand = DualDomainForecaster(zero_init=False, **common).eval()
+    with torch.no_grad():
+        _, c0 = silent(x, return_components=True)
+        _, c1 = rand(x, return_components=True)
+    assert c0["freq"].abs().max() < 1e-6
+    assert c1["freq"].abs().max() > 1e-3

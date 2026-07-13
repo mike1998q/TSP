@@ -49,7 +49,9 @@ pdflatex main.tex && pdflatex main.tex
 - **Baselines** (Table 3): quoted from the S-Mamba paper (same protocol),
   as cited in the table caption; plus a unified-framework DLinear rerun
   on ETTh1 (`results/Main_etth1_dlinear.json`).
-- **Ablations** (Tables 5–6): Solar (H=96, 1 seed) and Weather (H=96,
-  3 seeds, `results/Ablation_weather.json`), plus the traffic RevIN probe
+- **Ablations** (Tables 5–6): Solar (H=96, 1 seed, pre-final config —
+  flagged in-text) and Weather (H=96, 3 seeds, final config,
+  `results/Ablation_weather.json`; paired per-seed deltas with t-based
+  95% CIs computed from the per-run values), plus the traffic RevIN probe
   and the traffic 4-layer-mixer negative result discussed in Sect. 4.3.
 - **Figure 1**: TikZ, self-contained in main.tex.

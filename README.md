@@ -307,6 +307,7 @@ delta isolates that component.
 | `no_revin` | instance normalization | does RevIN handle distribution shift? |
 | `no_linear_backbone` | DLinear backbone (time) | is the linear anchor load-bearing? |
 | `no_fits` / `with_fits` | FITS spectral backbone | is linear-in-frequency load-bearing? |
+| `rand_init` | zero-initialization scheme | does zero-init beat standard random init? |
 | `time_mlp` / `time_mamba` | time-axis Mamba | does the selective SSM beat an MLP over time? |
 | `no_channel_mixer` / `with_channel_mixer` | variate Mamba mixing | do cross-channel dependencies matter here? |
 | `freq_mamba` | spectral encoder type | selective vs dense-linear bin mixing |
