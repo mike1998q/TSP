@@ -98,11 +98,18 @@ class MambaSSM(nn.Module):
         deltaA = torch.exp(delta.unsqueeze(-1) * A)               # (B, L, d_in, n)
         deltaB_u = delta.unsqueeze(-1) * B.unsqueeze(2) * u.unsqueeze(-1)  # (B,L,d_in,n)
 
+        # unbind() instead of per-step slicing: slicing a tensor that requires
+        # grad makes every loop step's backward scatter-add into a fresh
+        # full-size zeros tensor (O(L^2) memory traffic); unbind's backward is
+        # a single stack. Identical values and gradients, much faster on CPU.
+        deltaA_t = deltaA.unbind(1)
+        deltaB_u_t = deltaB_u.unbind(1)
+        C_t = C.unbind(1)
         h = torch.zeros(b, d_in, n, device=u.device, dtype=u.dtype)
         ys = []
         for t in range(l):
-            h = deltaA[:, t] * h + deltaB_u[:, t]                 # (B, d_in, n)
-            y = torch.einsum("bdn,bn->bd", h, C[:, t])           # (B, d_in)
+            h = deltaA_t[t] * h + deltaB_u_t[t]                   # (B, d_in, n)
+            y = torch.einsum("bdn,bn->bd", h, C_t[t])            # (B, d_in)
             ys.append(y)
         y = torch.stack(ys, dim=1)                                # (B, L, d_in)
         return y + u * D

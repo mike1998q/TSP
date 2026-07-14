@@ -102,7 +102,19 @@ steps only, or spectral mixing only \cite{frets} --- systematically
 underuse the other.
 
 We address both issues with \model{}, a dual-domain forecaster
-(Fig.~\ref{fig:arch}) organized around three ideas.
+(Fig.~\ref{fig:arch}) whose design follows a single discipline --- trace
+each recurring weakness of current forecasters to one matching structural
+remedy. Three deficiency--remedy pairs organize the model:
+\emph{(i)~deep networks relearn, and on small data never recover, the
+linear maps that already dominate ETT-class benchmarks} $\Rightarrow$
+\emph{each branch carries an explicit linear anchor with zero-initialized
+nonlinear corrections}; \emph{(ii)~single-view models --- time-only SSMs or
+spectral-only mixers --- underuse the complementary domain} $\Rightarrow$
+\emph{parallel time and frequency branches, fused by a convex gate that
+preserves both prediction paths}; \emph{(iii)~uniform capacity
+over-parameterizes low-channel data yet under-serves high-channel data}
+$\Rightarrow$ \emph{a bidirectional variate-mixing Mamba switched on per
+dataset}. We elaborate each pair below.
 
 \textbf{Dual branches with structurally preserved paths.} A time branch
 and a frequency branch each output a complete forecast; the model's
@@ -204,6 +216,33 @@ SSMs \cite{fmamba}. \model{} unifies these threads: causal Mamba over
 time, bidirectional Mamba over frequency bins and over variates, with the
 placement of each governed by dataset characteristics rather than applied
 uniformly.
+
+\paragraph{Decomposition and heteroscedasticity.} Splitting a series into
+interpretable components is a century-old idea: classical additive and
+multiplicative models, STL, wavelet multi-resolution analysis, EMD, and
+SSA all extract a trend, a seasonal part, and an irregular remainder
+\cite{dlinear,autoformer}. A recurring limitation, made explicit by the
+seasonal-trend-\emph{dispersion} decomposition (STD) \cite{std}, is that
+these methods model \emph{level} but not \emph{scale}: when the variance of
+a series changes over time --- heteroscedasticity --- the fluctuation is
+pushed into the irregular term and left unmodeled, which is exactly the
+regime of the non-stationary forecasting benchmarks. \model{} inherits this
+lineage but assigns each classical component a dedicated, learnable home.
+Its time branch performs moving-average trend/seasonal decomposition in the
+spirit of DLinear \cite{dlinear}, so the seasonal-trend split lands on the
+\emph{linear anchors} (Sect.~\ref{sec:anchors}); its RevIN instance
+normalization \cite{revin} removes each window's mean and standard
+deviation, absorbing precisely the dispersion that the additive triad
+leaves behind, so the anchors operate on an approximately stationary,
+homoscedastic residual. Read this way, normalization is not a
+preprocessing detail but the component that handles heteroscedasticity ---
+which is why our ablations find it decisive yet dataset-dependent
+(Sect.~\ref{sec:ablation}), helping where windows carry genuine scale
+shift and hurting where apparent nonstationarity is itself periodic
+structure. The same discipline of routing a specific deficiency to a
+dedicated spectral or normalization operator, rather than applying one
+mechanism uniformly, has been argued for frequency-domain design in
+adjacent fields \cite{dfir}.
 
 \section{Method}
 \label{sec:method}
@@ -800,10 +839,31 @@ $8.4$K training windows) tripled parameters and \emph{caused} premature
 early stopping through immediate overfitting; the released ETT
 configurations disable it.
 
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{fig_evidence.pdf}
+\caption{Dual-domain evidence. \textbf{(a)}~The learned fusion gate on
+ETTh1: the mean convex weight $\bar g_c$ assigned to the \emph{time} branch
+for each variate over the test set. Initialized time-heavy at
+$g_0{\approx}0.9$ (dashed), the trained gate redistributes weight toward
+the frequency branch (below the equal-mix line, dotted), matching the
+ETTh1 ablation in which the frequency branch alone reproduces the full
+model. \textbf{(b)}~Per-branch contribution: the paired increase in MSE
+($H{=}96$, three seeds) when each branch is removed --- freq contribution
+$=$ time-only $-$ full, time contribution $=$ freq-only $-$ full --- with
+$t$-based 95\% CIs; $^{*}$\,marks a CI clearing zero. Only Solar's
+frequency branch is individually significant; on ETTh1 and Weather the
+branches are mutually redundant. This is the visual form of our
+conditional dual-domain claim: the two domains are complementary on some
+datasets and interchangeable on others.}
+\label{fig:evidence}
+\end{figure}
+
 \subsection{Analysis}
 
 \paragraph{Where each domain wins.} The branch-only ablations
-(Table~\ref{tab:ablation}) quantify the two domains directly on solar:
+(Table~\ref{tab:ablation}, Fig.~\ref{fig:evidence}b) quantify the two
+domains directly on solar:
 removing the time branch costs $+0.012$ MSE while removing the frequency
 branch costs $+0.002$, i.e., both contribute but the time view carries
 more --- consistent with the protocol look-back hiding part of the
@@ -812,8 +872,13 @@ samples ${>}\,L{=}96$; the same argument applies to weather's daily and
 traffic's weekly cycles). Beyond ablations, the fusion gate
 (Eq.~\eqref{eq:fusion}) exposes per-sample, per-channel convex mixing
 weights at no extra cost --- a proxy for, not a causal measure of, branch
-contributions; a systematic study of gate behavior across datasets is
-left for the extended version.
+contributions. Figure~\ref{fig:evidence}a reads out these weights on a
+trained ETTh1 model: initialized time-heavy at $g_0{\approx}0.9$, the gate
+settles below the equal-mix line for most variates, shifting weight toward
+the frequency branch --- the same branch the ETTh1 ablation certifies as
+sufficient. The gate readout and the ablation thus agree, though only the
+ablation is causal; a systematic study of gate behavior across all
+datasets is left for the extended version.
 
 \paragraph{Efficiency.} We make no measured efficiency claim in this version
 and note only two design properties: parameter counts span $0.09$M--%
@@ -879,6 +944,16 @@ Code, configurations, and the ablation harness are available at
 \fi
 
 \begin{thebibliography}{99}
+
+\bibitem{std}
+Dudek, G.: STD: A seasonal-trend-dispersion decomposition of time series.
+IEEE Transactions on Knowledge and Data Engineering \textbf{35}(10),
+10339--10353 (2023)
+
+\bibitem{dfir}
+Gao, B., Tong, J., Chen, X., Yu, H., Li, Z.: DFIR-DETR: Frequency-domain
+iterative refinement and dynamic feature aggregation for small object
+detection. Neural Networks \textbf{204}, 109256 (2026)
 
 \bibitem{mamba}
 Gu, A., Dao, T.: Mamba: Linear-time sequence modeling with selective state
