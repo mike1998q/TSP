@@ -10,7 +10,8 @@
 \usepackage{multirow}
 \usepackage{url}
 \usepackage{tikz}
-\usetikzlibrary{positioning,arrows.meta}
+\usepackage{xcolor}
+\usetikzlibrary{positioning,arrows.meta,fit,backgrounds}
 
 \newcommand{\model}{DD-Mamba}
 \newcommand{\best}[1]{\textbf{#1}}
@@ -106,54 +107,93 @@ low-channel data, so any \emph{fixed} architecture is mis-sized for one
 regime or the other.
 
 We answer these three gaps with \model{} (Fig.~\ref{fig:arch}), mapping
-each to one structural remedy: \emph{(i)}~an explicit linear anchor with
-zero-initialized nonlinear corrections in each branch; \emph{(ii)}~parallel
-time and frequency branches, fused by a convex gate that preserves both
-prediction paths; and \emph{(iii)}~a bidirectional variate mixer switched
-on or off per dataset. Each remedy is detailed below.
+each to one structural remedy (Fig.~\ref{fig:gaps}): \emph{(i)}~an explicit
+linear anchor with zero-initialized nonlinear corrections in each branch;
+\emph{(ii)}~parallel time and frequency branches, fused by a convex gate
+that preserves both prediction paths; and \emph{(iii)}~a bidirectional
+variate mixer switched on or off per dataset. Each remedy is detailed
+below.
 
-\textbf{Dual branches with structurally preserved paths.} A time branch
-and a frequency branch each output a complete forecast; the model's
-prediction is a learned \emph{convex combination} of the two, with the
-gate conditioned on both branches' features. The output is constrained
-elementwise between the branch forecasts, so both domains retain an
-explicit prediction path, and the gate value reports the convex weight
-assigned to each branch --- a proxy for, not a causal measure of, their
-contributions --- while the \emph{actual} contribution of each branch is
-learned, and the
-gate may concentrate almost entirely on one branch for some samples or
-datasets (it is a sigmoid and can saturate near 0 or 1). Our paired
-ablations find the frequency branch's contribution significant on one of
-three ablated datasets (Solar) and within noise on the other two
-(Sect.~\ref{sec:ablation}); we accordingly claim per-dataset
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+  font=\scriptsize,
+  gap/.style={draw=red!58!black, fill=red!11, rounded corners=2pt,
+              align=left, text width=39mm, inner sep=3pt, minimum height=8mm},
+  remb/.style={draw=blue!62!black, fill=blue!12, rounded corners=2pt,
+               align=left, text width=54mm, inner sep=3pt, minimum height=8mm},
+  remv/.style={draw=violet!60!black, fill=violet!13, rounded corners=2pt,
+               align=left, text width=54mm, inner sep=3pt, minimum height=8mm},
+  remt/.style={draw=teal!62!black, fill=teal!14, rounded corners=2pt,
+               align=left, text width=54mm, inner sep=3pt, minimum height=8mm},
+  to/.style={-{Stealth[length=2mm]}, thick, black!55}]
+
+\node[gap] (g1) {\textbf{Gap 1.} Deep models discard the linear maps that
+  dominate ETT-class data};
+\node[gap, below=2mm of g1] (g2) {\textbf{Gap 2.} A single view (time
+  \emph{or} frequency) underuses the other};
+\node[gap, below=2mm of g2] (g3) {\textbf{Gap 3.} Fixed capacity is
+  mis-sized: mixing helps big data, overfits small};
+
+\node[remb, right=12mm of g1] (r1) {\textbf{Linear anchoring:} a linear
+  anchor $+$ zero-initialized deep correction per branch (\S\ref{sec:anchors})};
+\node[remv, right=12mm of g2] (r2) {\textbf{Dual domains:} parallel time
+  and frequency branches fused by a convex gate (\S\ref{sec:fusion})};
+\node[remt, right=12mm of g3] (r3) {\textbf{Capacity placement:} a
+  bidirectional variate mixer switched on per dataset (\S\ref{sec:mixer})};
+
+\draw[to] (g1) -- (r1);
+\draw[to] (g2) -- (r2);
+\draw[to] (g3) -- (r3);
+
+\node[font=\scriptsize\bfseries, above=0.5mm of g1, red!58!black] {Empirical gap};
+\node[font=\scriptsize\bfseries, above=0.5mm of r1, black!70] {\model{} remedy};
+
+\begin{scope}[on background layer]
+  \node[fill=black!3, rounded corners=3pt, inner sep=2.4mm,
+        fit=(g1)(g3)(r1)(r3)] {};
+\end{scope}
+\end{tikzpicture}
+\caption{The three empirical gaps that motivate \model{} and the remedy
+each maps to, colour-matched to Fig.~\ref{fig:arch}:
+\textcolor{blue!62!black}{time/linear} (blue),
+\textcolor{violet!60!black}{dual-domain fusion} (violet), and
+\textcolor{teal!62!black}{capacity placement} (teal).}
+\label{fig:gaps}
+\end{figure}
+
+\textbf{Dual branches with structurally preserved paths.} A time and a
+frequency branch each output a complete forecast; the model's prediction
+is their learned \emph{convex combination}, the gate conditioned on both
+branches' features. Constrained elementwise between the two forecasts,
+both domains keep an explicit prediction path, and the gate value reports
+each branch's convex weight --- a proxy for, not a causal measure of, its
+contribution --- while the gate may saturate near 0 or 1 and lean almost
+entirely on one branch. Our paired ablations find the frequency branch
+significant on one of three ablated datasets (Solar) and within noise on
+the others (Sect.~\ref{sec:ablation}); we thus claim per-dataset
 flexibility, not a universal dual-domain gain.
 
 \textbf{Linear anchors with zero-initialized corrections.} Each branch
-carries an explicit \emph{linear} pathway that parameterizes a strong
-linear forecaster family of its domain: DLinear-style seasonal/trend
-window-to-horizon projections \cite{dlinear} in the time branch, and an
-optional FITS-style complex-linear spectral map \cite{fits} in the
-frequency branch. These are parameterized pathways trained jointly with
-the model --- not pretrained or fitted linear predictors. All nonlinear
-heads (and the spectral map) are zero-initialized and the fusion gate
-opens as a constant $g_0$, so at initialization the model reduces to
-$g_0$ times a randomly initialized DLinear-style map of the
-\emph{instance-normalized} window --- linear in the normalized space, the
-same normalization wrapper used by RLinear-class linear models
-\cite{rlinear,revin} (Sect.~\ref{sec:anchors}). We adopt this for the
-interpretable linear start; a controlled comparison against standard
-random initialization finds it accuracy-neutral on the two datasets
-tested (Sect.~\ref{sec:ablation}), so we position it as an
-interpretability default, not an accuracy mechanism.
+carries an explicit \emph{linear} pathway of its domain --- DLinear-style
+seasonal/trend projections \cite{dlinear} in the time branch, an optional
+FITS-style complex-linear spectral map \cite{fits} in the frequency branch
+--- trained jointly, not pretrained. All nonlinear heads (and the spectral
+map) are zero-initialized and the gate opens at a constant $g_0$, so at
+initialization the model reduces to $g_0$ times a randomly initialized
+DLinear-style map of the \emph{instance-normalized} window
+(Sect.~\ref{sec:anchors}), the same normalization wrapper as RLinear-class
+models \cite{rlinear,revin}. A controlled comparison against random
+initialization finds this accuracy-neutral (Sect.~\ref{sec:ablation}), so
+we position it as an interpretability default, not an accuracy mechanism.
 
 \textbf{Mamba where it pays.} A causal Mamba encoder models the time axis;
 a \emph{bidirectional} Mamba (frequency bins and channels have no arrow of
-time) serves two optional roles: spectral encoding, and cross-channel
-mixing over the variate dimension in the spirit of S-Mamba \cite{smamba}.
-Crucially, capacity is \emph{placed} per dataset, and the paired
-ablations support this in both directions: removing the variate mixer
-hurts weather, while \emph{adding} it hurts ETTh1 --- each with a
-confidence interval excluding zero (Sect.~\ref{sec:ablation}).
+time) optionally does spectral encoding and cross-variate mixing in the
+spirit of S-Mamba \cite{smamba}. Capacity is \emph{placed} per dataset,
+and the paired ablations support this in both directions: removing the
+variate mixer hurts weather while \emph{adding} it hurts ETTh1, each with
+a CI excluding zero (Sect.~\ref{sec:ablation}).
 
 Our contributions are:
 \begin{enumerate}
@@ -251,40 +291,60 @@ fields \cite{dfir}.
 \begin{tikzpicture}[
   font=\scriptsize,
   box/.style={draw, rounded corners=2pt, align=center, inner sep=3pt,
-              minimum height=5.5mm},
-  anchorbox/.style={box, fill=black!8},
-  zbox/.style={box, densely dashed},
-  opt/.style={box, dotted},
+              minimum height=5.5mm, fill=white},
+  norm/.style={box, fill=teal!16, draw=teal!65!black, thick},
+  tbox/.style={box, fill=blue!10, draw=blue!62!black},
+  tanchor/.style={box, fill=blue!26, draw=blue!62!black, thick},
+  tzero/.style={box, densely dashed, fill=blue!5, draw=blue!62!black},
+  topt/.style={box, dotted, fill=blue!5, draw=blue!62!black},
+  fbox/.style={box, fill=orange!14, draw=orange!78!black},
+  fanchor/.style={box, fill=orange!32, draw=orange!78!black, thick},
+  fzero/.style={box, densely dashed, fill=orange!7, draw=orange!78!black},
+  fopt/.style={box, dotted, fill=orange!7, draw=orange!78!black},
+  fusebox/.style={box, fill=violet!16, draw=violet!62!black, thick},
+  sumc/.style={circle, draw=black!70, inner sep=1pt, fill=yellow!35, font=\footnotesize},
   arr/.style={-{Stealth[length=1.6mm]}, semithick},
-  feat/.style={-{Stealth[length=1.6mm]}, densely dotted},
+  feat/.style={-{Stealth[length=1.6mm]}, densely dotted, gray},
   node distance=3.2mm and 5mm]
 
 % input / normalization
-\node[box] (inp) {$\mathbf{X}\in\mathbb{R}^{L\times C}$};
-\node[box, right=of inp] (revin) {RevIN\\(per dataset)};
+\node[norm] (inp) {$\mathbf{X}\in\mathbb{R}^{L\times C}$};
+\node[norm, right=of inp] (revin) {RevIN\\(per dataset)};
 
 % time branch (top row)
-\node[box, above right=7mm and 6mm of revin] (dec) {decomp\\$\mathbf{X}_s,\mathbf{X}_t$};
-\node[anchorbox, above right=1.5mm and 4mm of dec] (dlin) {DLinear anchor\\$\mathbf{W}_s,\mathbf{W}_t$};
-\node[box, below=2.5mm of dlin] (mamba) {Mamba encoder\\(causal, over time)};
-\node[opt, right=4mm of mamba] (mixT) {variate mixer\\(BiMamba, opt.)};
-\node[zbox, right=4mm of mixT] (headT) {head $\phi_{\mathrm{time}}$\\(zero-init)};
-\node[circle, draw, inner sep=1pt, right=3.5mm of headT] (sumT) {$+$};
+\node[tbox, above right=7mm and 6mm of revin] (dec) {decomp\\$\mathbf{X}_s,\mathbf{X}_t$};
+\node[tanchor, above right=1.5mm and 4mm of dec] (dlin) {DLinear anchor\\$\mathbf{W}_s,\mathbf{W}_t$};
+\node[tbox, below=2.5mm of dlin] (mamba) {Mamba encoder\\(causal, over time)};
+\node[topt, right=4mm of mamba] (mixT) {variate mixer\\(BiMamba, opt.)};
+\node[tzero, right=4mm of mixT] (headT) {head $\phi_{\mathrm{time}}$\\(zero-init)};
+\node[sumc, right=3.5mm of headT] (sumT) {$+$};
 
 % freq branch (bottom row)
-\node[box, below right=7mm and 6mm of revin] (fft) {rFFT +\\low-pass $\rho$};
-\node[anchorbox, below right=1.5mm and 4mm of fft] (fits) {FITS anchor $\mathbf{U}$\\(zero-init, opt.)};
-\node[box, above=2.5mm of fits] (spec) {spectral encoder\\(complex filter)};
-\node[opt, right=4mm of spec] (mixF) {variate mixer\\(BiMamba, opt.)};
-\node[zbox, right=4mm of mixF] (headF) {head $\phi_{\mathrm{freq}}$\\(zero-init)};
-\node[circle, draw, inner sep=1pt, right=3.5mm of headF] (sumF) {$+$};
+\node[fbox, below right=7mm and 6mm of revin] (fft) {rFFT +\\low-pass $\rho$};
+\node[fanchor, below right=1.5mm and 4mm of fft] (fits) {FITS anchor $\mathbf{U}$\\(zero-init, opt.)};
+\node[fbox, above=2.5mm of fits] (spec) {spectral encoder\\(complex filter)};
+\node[fopt, right=4mm of spec] (mixF) {variate mixer\\(BiMamba, opt.)};
+\node[fzero, right=4mm of mixF] (headF) {head $\phi_{\mathrm{freq}}$\\(zero-init)};
+\node[sumc, right=3.5mm of headF] (sumF) {$+$};
 
 % fusion
-\node[box, right=19mm of revin, xshift=62mm] (gate)
+\node[fusebox, right=19mm of revin, xshift=62mm] (gate)
   {gate $g=\sigma(\psi([\mathbf{f}_{\mathrm{t}};\mathbf{f}_{\mathrm{f}}]))$};
-\node[box, right=4mm of gate] (fuse)
+\node[fusebox, right=4mm of gate] (fuse)
   {$g\,\mathbf{Y}_{\mathrm{time}}$\\$+\,(1{-}g)\,\mathbf{Y}_{\mathrm{freq}}$};
-\node[box, below=3.2mm of fuse] (out) {de-norm $\rightarrow$\\$\mathbf{Y}\in\mathbb{R}^{H\times C}$};
+\node[norm, below=3.2mm of fuse] (out) {de-norm $\rightarrow$\\$\mathbf{Y}\in\mathbb{R}^{H\times C}$};
+
+% layered branch panels (drawn behind the nodes)
+\begin{scope}[on background layer]
+  \node[fill=blue!6, rounded corners=3pt, draw=blue!35, inner sep=2.4mm,
+        fit=(dec)(dlin)(mixT)(sumT)] (tpanel) {};
+  \node[anchor=north west, font=\scriptsize\bfseries, blue!62!black]
+        at (tpanel.north west) {\;Time branch};
+  \node[fill=orange!7, rounded corners=3pt, draw=orange!40, inner sep=2.4mm,
+        fit=(fft)(fits)(mixF)(sumF)] (fpanel) {};
+  \node[anchor=south west, font=\scriptsize\bfseries, orange!78!black]
+        at (fpanel.south west) {\;Frequency branch};
+\end{scope}
 
 % edges
 \draw[arr] (inp) -- (revin);
@@ -295,25 +355,30 @@ fields \cite{dfir}.
 \draw[arr] (mamba) -- (mixT);
 \draw[arr] (mixT) -- (headT);
 \draw[arr] (headT) -- (sumT);
-\draw[arr] (dlin.east) -| (sumT.north);
+\draw[arr, blue!62!black] (dlin.east) -| (sumT.north);
 \draw[arr] (fft.east) |- (fits.west);
 \draw[arr] (fft.east) |- (spec.west);
 \draw[arr] (spec) -- (mixF);
 \draw[arr] (mixF) -- (headF);
 \draw[arr] (headF) -- (sumF);
-\draw[arr] (fits.east) -| (sumF.south);
-\draw[arr] (sumT.east) -| node[pos=0.25, above]{$\mathbf{Y}_{\mathrm{time}}$} (fuse.north);
-\draw[arr] (sumF.east) -| node[pos=0.25, below]{$\mathbf{Y}_{\mathrm{freq}}$} (fuse.south);
+\draw[arr, orange!78!black] (fits.east) -| (sumF.south);
+\draw[arr, blue!62!black] (sumT.east) -| node[pos=0.25, above]{$\mathbf{Y}_{\mathrm{time}}$} (fuse.north);
+\draw[arr, orange!78!black] (sumF.east) -| node[pos=0.25, below]{$\mathbf{Y}_{\mathrm{freq}}$} (fuse.south);
 \draw[feat] (mixT.south east) -- (gate.north west);
 \draw[feat] (mixF.north east) -- (gate.south west);
 \draw[arr] (gate) -- (fuse);
 \draw[arr] (fuse) -- (out);
 \end{tikzpicture}}
-\caption{\model{} overview. Both branches carry a linear anchor (shaded)
-and zero-initialized nonlinear heads (dashed), so at initialization the
-model reduces to a linear map of the instance-normalized window. Dotted
-boxes are per-dataset switches; dotted arrows carry branch features to
-the fusion gate, whose convex weight $g$ mixes the two branch forecasts.}
+\caption{\model{} overview, color-coded by role: the \textcolor{teal!65!black}{\textbf{normalization}}
+wrapper (teal), the \textcolor{blue!62!black}{\textbf{time branch}} (blue),
+the \textcolor{orange!78!black}{\textbf{frequency branch}} (orange), and the
+\textcolor{violet!62!black}{\textbf{convex-gate fusion}} (violet). In each
+branch a solid-filled \emph{linear anchor} runs in parallel with a
+zero-initialized nonlinear head (dashed), so at initialization the model
+reduces to a linear map of the instance-normalized window. Dotted boxes are
+per-dataset switches; dotted grey arrows carry branch features to the gate,
+whose convex weight $g$ mixes the two coloured forecast paths
+$\mathbf{Y}_{\mathrm{time}}$ and $\mathbf{Y}_{\mathrm{freq}}$.}
 \label{fig:arch}
 \end{figure}
 
@@ -470,19 +535,16 @@ g = \sigma\!\big(\psi([\mathbf{f}_{\mathrm{time}};
 \label{eq:fusion}
 \end{equation}
 with $\psi$ applied row-wise (per variate), followed by RevIN
-de-normalization. Since $\mathbf{Y}$ lies elementwise
-between the branch forecasts, both domains retain an explicit prediction
-path, and the gate value reports each branch's convex mixing weight ---
-a lightweight proxy for its contribution, not a causal attribution. The constraint
-is structural, not behavioral: $g$ is a sigmoid and can saturate near 0
-or 1, so one branch may contribute very little for some samples or
-datasets --- which is by design, as the ablations show the useful domain
-is dataset-dependent. $\psi$ is zero-initialized with bias $2.2$, so
-training starts at $g \approx 0.9$: the time branch's output is linear
-(in the normalized window) at initialization while the frequency branch
-is silent, and an
-even $0.5/0.5$ mix would waste the highest-learning-rate epochs
-compensating for noise.
+de-normalization. Since $\mathbf{Y}$ lies elementwise between the branch
+forecasts, both domains retain an explicit prediction path, and the gate
+value reports each branch's convex mixing weight --- a lightweight proxy
+for its contribution, not a causal attribution. The constraint is
+structural, not behavioral: $g$ is a sigmoid and can saturate near 0 or 1,
+so one branch may contribute very little --- by design, as the ablations
+show the useful domain is dataset-dependent. $\psi$ is zero-initialized
+with bias $2.2$, so training starts at $g \approx 0.9$: the time branch is
+linear at initialization while the frequency branch is silent, and an even
+$0.5/0.5$ mix would waste the highest-learning-rate epochs on noise.
 
 \subsection{Training}
 
@@ -550,24 +612,20 @@ harness ship with the code. All main results (Tables~\ref{tab:main} and
 \ref{tab:horizons}) are means over \emph{three seeds} (2024--2026);
 Table~\ref{tab:horizons} reports the per-entry standard deviations, whose
 maximum across all 36 dataset--horizon entries is $0.005$ MSE (Solar,
-$H{=}720$) with a typical value of $0.001$--$0.003$. \paragraph{Statistical methodology.} We use two levels of comparison.
-\emph{Within our framework} (ablations), every variant shares its seeds
-with the reference, so we report \emph{paired} per-seed differences with
-$t$-based 95\% confidence intervals ($n{=}3$) and treat a component as
-supported only when its CI excludes zero. \emph{Against quoted
-baselines}, pairing is impossible, and we use a conservative unpaired tie
-threshold of $0.005$ MSE. Our in-framework DLinear re-run quantifies why
-this caution is necessary: re-trained through the identical data
-pipeline, splits, schedule, and evaluation script on ETTh1 (three seeds),
-DLinear averages $0.462$/$0.456$ MSE/MAE versus its quoted
-$0.456$/$0.452$ --- an implementation gap of $+0.006$, the same order as
-several margins in Table~\ref{tab:main}. Cross-paper comparisons
-therefore cannot support sub-$0.01$ distinctions, and our headline
-comparison should be read with that caveat; re-running S-Mamba,
-iTransformer, and PatchTST in this framework is the planned resolution.
-\model{}'s margin over the in-framework DLinear on ETTh1 ($0.439$ vs.\
-$0.462$) is, by contrast, a same-pipeline comparison, roughly six times
-the largest observed std.
+$H{=}720$) with a typical value of $0.001$--$0.003$. \paragraph{Statistical methodology.} We compare at two levels.
+\emph{Within our framework} (ablations), every variant shares seeds with
+the reference, so we report \emph{paired} per-seed differences with
+$t$-based 95\% CIs ($n{=}3$) and treat a component as supported only when
+its CI excludes zero. \emph{Against quoted baselines}, pairing is
+impossible, so we use a conservative unpaired tie threshold of $0.005$
+MSE. Our in-framework DLinear re-run shows why: through the identical
+pipeline on ETTh1 (three seeds) it averages $0.462$/$0.456$ MSE/MAE versus
+its quoted $0.456$/$0.452$ --- a $+0.006$ implementation gap, the order of
+several margins in Table~\ref{tab:main}. Cross-paper comparisons therefore
+cannot support sub-$0.01$ distinctions; re-running S-Mamba, iTransformer,
+and PatchTST here is the planned resolution. \model{}'s margin over the
+in-framework DLinear ($0.439$ vs.\ $0.462$) is, by contrast, a
+same-pipeline comparison, roughly six times the largest observed std.
 
 \begin{table}[t]
 \centering
@@ -926,7 +984,7 @@ being redundant on ETTh1 and weather; zero initialization is
 accuracy-neutral. We therefore claim per-dataset structural flexibility
 with dataset-dependent branch value, not a universal benefit of combining
 domains --- and a transferable caution: instance normalization can help or
-hurt depending on whether apparent nonstationarity is real shift or
+hurt depending on whether apparent nonstationarity is genuine shift or
 periodic structure.
 
 Limitations remain, each with the experiment that would resolve it.
@@ -935,19 +993,17 @@ horizon, $n{=}3$; extending the paired matrix across horizons and datasets
 would map where it generalizes. (2)~Zero initialization is
 accuracy-neutral, but its hypothesized stability value (convergence,
 failure rates, correction magnitudes) is untested. (3)~Baselines are
-quoted from \cite{smamba}, not re-run; the in-framework DLinear gap of
-$+0.006$ (Sect.~\ref{sec:repro}) means comparative claims hold only as
-``competitive with reported results under the same protocol'' until
-S-Mamba, iTransformer, and PatchTST are reproduced here. (4)~The fixed
-look-back of 96 hides cycles longer than the window (weather's daily,
-traffic's weekly) --- our hypothesis for the traffic deficit, testable
-with longer look-backs and calendar covariates. Multi-resolution windows
-and adaptive spectral cutoffs are natural next steps.
+quoted from \cite{smamba}, not re-run; the $+0.006$ in-framework DLinear
+gap (Sect.~\ref{sec:repro}) means comparative claims hold only as
+``competitive with reported results under the same protocol'' until the
+baselines are reproduced here. (4)~The fixed look-back of 96 hides cycles
+longer than the window (weather's daily, traffic's weekly), our hypothesis
+for the traffic deficit. Multi-resolution windows and adaptive spectral
+cutoffs are natural next steps.
 
 \ifanonymous
-\paragraph{Reproducibility.} Code, configurations, and the ablation
-harness are provided as supplementary material and will be released in a
-public repository upon acceptance.
+\paragraph{Reproducibility.} Code, configurations, and the ablation harness
+are supplementary material, to be released publicly upon acceptance.
 \else
 \subsubsection{\ackname}
 % TODO: funding acknowledgements for the camera-ready.
@@ -956,6 +1012,7 @@ Code, configurations, and the ablation harness are available at
 \fi
 
 \begin{thebibliography}{99}
+\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}
 
 \bibitem{std}
 Dudek, G.: STD: A seasonal-trend-dispersion decomposition of time series.
