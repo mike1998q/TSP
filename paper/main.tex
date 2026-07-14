@@ -45,31 +45,32 @@ Second Author\inst{1}}
 
 \begin{abstract}
 Long-term multivariate time series forecasting must reconcile two
-complementary views of a signal: local, trend-driven dynamics in the time
+complementary views: local, trend-driven dynamics in the time
 domain, and global periodic structure most compact in the frequency
 domain. Existing state-space (Mamba) forecasters model one view but
-not both, and deep forecasters often discard the simple linear maps that
-remain near state-of-the-art on many benchmarks. We
+not both, and deep forecasters often discard simple linear maps that
+remain near state-of-the-art. We
 present \model{}, a dual-domain forecasting \emph{framework} whose time
-branch (trend--seasonal decomposition with a selective state-space
-encoder) and frequency branch (learnable complex spectral filtering)
-each produce a forecast, fused by a learned convex gate that structurally
-preserves both prediction paths. Two principles organize the
+branch (decomposition with a selective state-space encoder) and
+frequency branch (learned spectral filtering) each produce a forecast,
+fused by a convex gate that preserves both prediction
+paths. Two principles organize the
 framework: (i)~\emph{linear anchoring} --- the time branch carries a
 DLinear-style linear pathway, the frequency branch an optional FITS-style
 spectral map, and all nonlinear heads are zero-initialized, so at
 initialization the model reduces to a linear map of the
 instance-normalized window; and (ii)~\emph{capacity placement} --- a bidirectional
 Mamba over the \emph{variate} dimension carries the model on high-channel
-data and is disabled on small, few-channel data where it only overfits. On nine benchmarks under the look-back-96 protocol (three
+data and is disabled on few-channel data where it overfits. On nine benchmarks under the look-back-96 protocol (three
 seeds), \model{} reports the lowest mean MSE on seven, improving over
 reported S-Mamba results on five (up to 17\% on Solar), tying three
-within noise, and trailing one, with far fewer parameters on small
-datasets. Paired ablations validate the variate mixer, the normalization
-choice, and (on weather) the temporal Mamba; the frequency branch is
-within noise on both ablated datasets, so dual-domain modeling is
-presented as a per-dataset structural option rather than a universal
-gain.
+within noise, and trailing one, with fewer parameters on small
+datasets. Paired three-seed ablations on three datasets validate capacity
+placement in both directions (the variate mixer helps weather yet hurts
+ETTh1; normalization helps weather yet hurt solar), show a significant
+frequency-branch contribution on Solar with redundancy elsewhere, and
+find zero initialization accuracy-neutral; dual-domain modeling is a
+per-dataset structural option, not a universal gain.
 \keywords{Time series forecasting \and State-space models \and Mamba \and
 Frequency domain \and Multivariate analysis}
 \end{abstract}
@@ -114,9 +115,10 @@ contributions --- while the \emph{actual} contribution of each branch is
 learned, and the
 gate may concentrate almost entirely on one branch for some samples or
 datasets (it is a sigmoid and can saturate near 0 or 1). Our paired
-ablations in fact find the frequency branch's contribution within noise
-on both ablated datasets (Sect.~\ref{sec:ablation}); we accordingly
-claim per-dataset flexibility, not a universal dual-domain gain.
+ablations find the frequency branch's contribution significant on one of
+three ablated datasets (Solar) and within noise on the other two
+(Sect.~\ref{sec:ablation}); we accordingly claim per-dataset
+flexibility, not a universal dual-domain gain.
 
 \textbf{Linear anchors with zero-initialized corrections.} Each branch
 carries an explicit \emph{linear} pathway that parameterizes a strong
@@ -130,21 +132,20 @@ opens as a constant $g_0$, so at initialization the model reduces to
 $g_0$ times a randomly initialized DLinear-style map of the
 \emph{instance-normalized} window --- linear in the normalized space, the
 same normalization wrapper used by RLinear-class linear models
-\cite{rlinear,revin} (Sect.~\ref{sec:anchors}). We adopt this to
-stabilize small-data training and avoid the mean-reversion failure mode
-of pooled deep forecasters; isolating the causal effect of the
-initialization from that of the linear pathway itself requires a
-controlled comparison, which ships as a harness switch
-(Sect.~\ref{sec:ablation}) but has not yet been run.
+\cite{rlinear,revin} (Sect.~\ref{sec:anchors}). We adopt this for the
+interpretable linear start; a controlled comparison against standard
+random initialization finds it accuracy-neutral on the two datasets
+tested (Sect.~\ref{sec:ablation}), so we position it as an
+interpretability default, not an accuracy mechanism.
 
 \textbf{Mamba where it pays.} A causal Mamba encoder models the time axis;
 a \emph{bidirectional} Mamba (frequency bins and channels have no arrow of
 time) serves two optional roles: spectral encoding, and cross-channel
 mixing over the variate dimension in the spirit of S-Mamba \cite{smamba}.
-Crucially, capacity is \emph{placed} per dataset: the variate mixer is the
-dominant component on high-channel data (electricity, traffic, solar) and
-is disabled on few-channel small data (ETT, exchange) where ablations show
-it only adds overfitting capacity.
+Crucially, capacity is \emph{placed} per dataset, and the paired
+ablations support this in both directions: removing the variate mixer
+hurts weather, while \emph{adding} it hurts ETTh1 --- each with a
+confidence interval excluding zero (Sect.~\ref{sec:ablation}).
 
 Our contributions are:
 \begin{enumerate}
@@ -155,8 +156,8 @@ convex weight (Sect.~\ref{sec:method}).
 \item A linear-anchoring scheme --- domain-appropriate linear pathways
 with zero-initialized nonlinear corrections --- under which the model at
 initialization reduces to a linear map of the instance-normalized window;
-it accompanies strong small-benchmark results, and a controlled
-zero-vs.-random initialization switch ships with the code
+a controlled comparison against random initialization finds it
+accuracy-neutral, so its value is the interpretable linear start
 (Sect.~\ref{sec:anchors}, Sect.~\ref{sec:ablation}).
 \item A capacity-placement recipe for selective SSMs: causal Mamba over
 time where temporal microstructure matters, bidirectional Mamba over
@@ -165,8 +166,8 @@ is scarce (Sect.~\ref{sec:mixer}).
 \item The lowest reported average MSE on seven of nine standard
 benchmarks under the unified look-back-96 protocol (three-seed
 mean~$\pm$~std for every entry), relative to results published under the
-same protocol, plus a released ablation harness and multi-seed ablations
-on two datasets --- including negative and dataset-dependent findings
+same protocol, plus a released ablation harness and paired multi-seed ablations
+on three datasets --- including negative and dataset-dependent findings
 (instance normalization helps weather and traffic yet hurts solar) that
 we believe are as actionable as the positive ones
 (Sect.~\ref{sec:experiments}).
@@ -428,11 +429,11 @@ convex combination
 \mathbf{Y} = g \odot \mathbf{Y}_{\mathrm{time}} + (1 - g) \odot
 \mathbf{Y}_{\mathrm{freq}}, \qquad
 g = \sigma\!\big(\psi([\mathbf{f}_{\mathrm{time}};
-\mathbf{f}_{\mathrm{freq}}])\big) \in (0,1)^{C\times 1}\!,\;\;
-\psi \text{ applied row-wise (per variate)},
+\mathbf{f}_{\mathrm{freq}}])\big) \in (0,1)^{C\times 1},
 \label{eq:fusion}
 \end{equation}
-followed by RevIN de-normalization. Since $\mathbf{Y}$ lies elementwise
+with $\psi$ applied row-wise (per variate), followed by RevIN
+de-normalization. Since $\mathbf{Y}$ lies elementwise
 between the branch forecasts, both domains retain an explicit prediction
 path, and the gate value reports each branch's convex mixing weight ---
 a lightweight proxy for its contribution, not a causal attribution. The constraint
@@ -656,102 +657,95 @@ matter most --- there \model{} uses roughly $0.25$M parameters, two
 orders of magnitude fewer than variate-attention models configured for
 those datasets.
 
-\subsection{Component Ablations: A Case Study}
+\subsection{Component Ablations}
 \label{sec:ablation}
 
 We release an ablation harness in which every variant flips exactly one
 switch of a dataset's full configuration, holding the split, schedule,
 seeds, and all other hyperparameters fixed. We report its complete output
-on two datasets --- Solar-Energy ($H{=}96$, single seed,
-Table~\ref{tab:ablation}) and Weather ($H{=}96$, \emph{three seeds},
-Table~\ref{tab:ablation_weather}) --- together with targeted probes on
-traffic and ETT that changed the released configurations. Deltas are
-interpreted against the empirical noise floor of
-Sect.~\ref{sec:repro}; sub-floor deltas are reported as ties. Extending
-the multi-seed matrix to the remaining datasets and horizons is left for
-the camera-ready version.
+on three datasets under their \emph{final released configurations}, three
+seeds each and all at $H{=}96$: ETTh1 and Solar-Energy
+(Table~\ref{tab:ablation}) and Weather
+(Table~\ref{tab:ablation_weather}), analyzed with the paired methodology
+of Sect.~\ref{sec:repro}. Two internal consistency checks pass: the Solar
+``full'' row reproduces the main-table Solar $H{=}96$ entry exactly
+($0.180{\scriptstyle\pm.004}$), and Solar's w/o-instance-norm variant
+coincides with its full configuration (which already disables RevIN), so
+that cell is omitted.
 
 \begin{table}[t]
 \centering
-\caption{Component ablation on Solar-Energy ($H{=}96$, single seed;
-noise floor $\approx 0.005$ MSE). Each variant flips exactly one switch of
-the full configuration.}
+\caption{Component ablations on ETTh1 and Solar-Energy ($H{=}96$, three
+seeds, final configurations): paired per-seed $\Delta$MSE to the full
+model with $t$-based 95\% CIs; $^{*}$\,CI excludes zero. The FITS anchor
+is enabled on ETTh1 (hence \emph{removed}) and disabled on Solar (hence
+\emph{added}); the variate mixer is off on ETTh1 (\emph{added}) and on
+for Solar (\emph{removed}).}
 \label{tab:ablation}
-\begin{tabular}{@{}lccl@{}}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}lcc@{}}
 \toprule
-Variant & MSE & $\Delta$MSE & Component isolated \\
+Variant & ETTh1: $\Delta$ [95\% CI] & Solar: $\Delta$ [95\% CI] \\
 \midrule
-full & 0.197 & --- & reference \\
-\;\;w/o channel mixer & 0.219 & $+0.022$ & cross-variate Mamba mixing \\
-\;\;w/o linear backbone & 0.209 & $+0.012$ & DLinear anchor (time) \\
-\;\;freq branch only & 0.209 & $+0.012$ & time branch removed \\
-\;\;sum fusion & 0.202 & $+0.006$ & learned gate $\rightarrow$ average \\
-\;\;time branch only & 0.198 & $+0.002$ & frequency branch removed \\
-\;\;Mamba$\rightarrow$MLP over time & 0.197 & $+0.001$ & selective scan (time) \\
-\;\;w/o instance norm & \textbf{0.181} & $\mathbf{-0.016}$ & RevIN \\
+full (reference MSE) & $0.3802{\scriptstyle\pm.001}$ & $0.1802{\scriptstyle\pm.004}$ \\
+\;\;time branch only (freq removed) & $+0.0034$ $[-0.009,+0.016]$ & $+0.0114$ $[+0.001,+0.021]$$^{*}$ \\
+\;\;freq branch only (time removed) & $-0.0007$ $[-0.004,+0.003]$ & $+0.0051$ $[-0.013,+0.023]$ \\
+\;\;sum fusion & $-0.0026$ $[-0.007,+0.002]$ & $+0.0066$ $[-0.005,+0.018]$ \\
+\;\;w/o instance norm & $+0.0061$ $[-0.001,+0.013]$ & --- \\
+\;\;w/o linear backbone & $-0.0031$ $[-0.009,+0.003]$ & $+0.0081$ $[-0.019,+0.035]$ \\
+\;\;random init (vs.\ zero-init) & $-0.0012$ $[-0.005,+0.002]$ & $-0.0046$ $[-0.022,+0.013]$ \\
+\;\;FITS anchor removed / added & $+0.0042$ $[-0.018,+0.026]$ & $+0.0088$ $[-0.002,+0.019]$ \\
+\;\;variate mixer added / removed & $+0.0077$ $[+0.004,+0.012]$$^{*}$ & $+0.0119$ $[-0.010,+0.034]$ \\
+\;\;Mamba$\rightarrow$MLP over time & $-0.0022$ $[-0.007,+0.003]$ & $+0.0089$ $[-0.002,+0.020]$ \\
+\;\;freq Mamba encoder & $-0.0024$ $[-0.011,+0.006]$ & $-0.0117$ $[-0.044,+0.020]$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Table~\ref{tab:ablation} isolates each component on Solar-Energy. The
-``full'' configuration here predates the IN~=~no finding below (it uses
-IN~=~yes, scoring $0.197$); acting on that finding, the final Solar
-configuration disables instance normalization, and the main results
-(Tables~\ref{tab:main}--\ref{tab:horizons}) were re-measured under it
-across all horizons and seeds --- its $H{=}96$ mean of
-$0.180{\scriptstyle\pm.004}$ matches this table's w/o-instance-norm
-variant ($0.181$), closing the loop between ablation and main results.
-We flag the resulting limitation explicitly: apart from that variant,
-this table characterizes the \emph{pre-final} (IN~=~on) Solar
-configuration with a single seed. Because normalization can interact
-with the linear backbone, the encoder, and the gate, these deltas should
-not be read as component attributions for the final Solar model; the
-weather study below (final configuration, paired, multi-seed) is our
-primary component evidence, and re-running the Solar suite under the
-final configuration is required to close this gap.
+\paragraph{Dual-domain evidence.} The decisive result is on Solar:
+removing the frequency branch degrades MSE by $+0.0114$ with a CI
+excluding zero --- the first statistically supported frequency-branch
+contribution in our studies. On ETTh1 and Weather, by contrast, both
+single-branch variants lie within their CIs; on ETTh1 the frequency
+branch \emph{alone} even matches the full model ($-0.0007$), i.e., the
+two branches are largely redundant there. The dual-domain claim our data
+supports is therefore conditional: the frequency path contributes
+measurably on Solar and is redundant, though not harmful, on the other
+two ablated datasets.
 
-The evidence is differentiated, and we read it as such. \emph{Clear
-contributors} (well above the noise floor): the variate mixer ($+0.022$
-when removed) --- consistent with 137 strongly coupled photovoltaic
-plants --- the DLinear anchor ($+0.012$), and the time branch as a whole
-($+0.012$). \emph{Marginal on this dataset}: the learned gate over plain
-averaging ($+0.006$, barely above the floor), the frequency branch
-($+0.002$, below the floor), and the temporal Mamba versus an MLP
-($+0.001$, a tie). \emph{Harmful here}: instance normalization
-($-0.016$ when removed). We therefore do not claim that every component
-is validated by this study: on solar, the frequency branch and the
-temporal SSM show no measurable benefit, and their value --- like
-RevIN's --- is dataset-dependent (the frequency branch is structurally
-limited whenever the dominant period exceeds the look-back, as here and
-on weather/traffic; the temporal SSM is dispensable exactly where the
-variate mixer carries the signal). Multi-dataset, multi-seed evidence is
-required before component-level claims generalize, and the released
-harness is built to produce it.
+\paragraph{Capacity placement, validated in both directions.} Adding the
+variate mixer on ETTh1 \emph{hurts} ($+0.0077$, CI $[+0.004,+0.012]$),
+while removing it on Weather also hurts ($+0.0104$, $[+0.004,+0.017]$)
+--- significant paired evidence on both sides of the placement decision.
+Instance normalization shows the same two-sided pattern: removing it
+hurts Weather ($+0.0161$, $[+0.005,+0.027]$), while \emph{disabling} it
+on Solar improved the re-measured main results from $0.228$ to $0.199$
+average MSE (a legacy single-seed probe on the pre-final Solar
+configuration first surfaced this as $-0.016$ MSE at $H{=}96$).
 
-A second complete run of the harness on Weather ($H{=}96$, three seeds,
-final configuration; Table~\ref{tab:ablation_weather}) is our primary
-component evidence. Because every variant shares its seeds with the full
-model, we analyze it with \emph{paired} per-seed differences and
-$t$-based 95\% confidence intervals (Sect.~\ref{sec:repro}). Exactly
-three components survive this test: instance normalization
-($\Delta{=}{+}0.0161$, CI $[+0.005,+0.027]$ when removed --- the
-\emph{opposite} sign of solar), the variate mixer (${+}0.0104$,
-$[+0.004,+0.017]$), and the temporal Mamba (${+}0.0027$,
-$[+0.0020,+0.0034]$; a small effect, but positive on all three seeds).
-Every other variant's CI includes zero --- in particular \emph{both}
-single-branch variants (${+}0.0007$ and ${+}0.0006$): removing the
-frequency branch is statistically indistinguishable from the full model
-on weather, and the same holds on solar. We therefore do not claim that
-dual-domain fusion improves accuracy on the ablated datasets. The
-framework's measured value lies in per-dataset component placement
-(normalization, mixer, encoder); identifying a dataset with a clearly
-attributable frequency-branch gain --- the ETT configurations, where the
-FITS anchor is enabled and linear-in-frequency methods are strongest,
-are the natural candidates --- is the decisive open experiment. Across
-the two studies, the variate mixer is the one component validated on
-both; instance normalization is strongly dataset-dependent in both
-directions; the rest vary with dataset structure --- the argument for
-shipping them as per-dataset switches rather than universal defaults.
+\paragraph{Zero initialization: a null result.} The controlled
+random-initialization comparison --- the harness switch introduced
+precisely for this test --- finds no significant accuracy difference on
+either dataset ($-0.0012$ on ETTh1, $-0.0046$ on Solar; both CIs include
+zero). We therefore make no accuracy claim for zero initialization: its
+value in this framework is the interpretable linear start of
+Sect.~\ref{sec:anchors}, and stability-oriented analyses (convergence
+curves, failure rates, correction magnitudes) remain future work.
+
+\paragraph{Weaker components.} The DLinear backbone is not individually
+significant in any paired study (point estimates $+0.008$ on Solar,
+$+0.001$ on Weather, $-0.003$ on ETTh1, where the FITS pathway can
+substitute for it), and the learned gate versus plain averaging is
+within CIs everywhere. On Weather (Table~\ref{tab:ablation_weather}),
+exactly three components survive the paired test: instance normalization
+($+0.0161$), the variate mixer ($+0.0104$), and the temporal Mamba
+($+0.0027$, $[+0.0020,+0.0034]$, positive on all three seeds); every
+other variant's CI includes zero. Across the three studies the recurring
+pattern is that component value is dataset-dependent --- in \emph{both}
+directions for the mixer and normalization --- which is the argument for
+shipping components as per-dataset switches rather than universal
+defaults.
 
 \begin{table}[t]
 \centering
@@ -843,30 +837,30 @@ look-back-96 protocol, this recipe achieves the lowest reported average
 MSE on seven of nine standard benchmarks and remains competitive on
 Exchange, while still lagging behind S-Mamba on Traffic, with parameter
 counts spanning $0.09$M to $19.7$M across datasets. We state plainly
-what the paired ablations do and do not support: they validate the
-variate mixer, the per-dataset normalization choice, and (on weather)
-the temporal encoder; they do \emph{not} show a measurable
-frequency-branch contribution on the two ablated datasets, so we claim
-per-dataset structural flexibility, not a universal benefit of combining
-domains. They also surface a transferable methodological caution:
+what the paired ablations do and do not support: capacity placement is
+validated in \emph{both} directions (the variate mixer helps weather yet
+hurts ETTh1; normalization helps weather yet hurt solar), the temporal
+encoder helps weather, and the frequency branch contributes measurably
+on Solar while being redundant on ETTh1 and weather; zero initialization
+is accuracy-neutral in a controlled comparison. We therefore claim
+per-dataset structural flexibility with dataset-dependent branch value,
+not a universal benefit of combining domains. They also surface a transferable methodological caution:
 instance normalization can help or hurt substantially depending on
 whether apparent nonstationarity is real shift or periodic structure.
 
 Limitations remain; we list each with the experiment that would resolve
-it. (1)~No dataset yet shows a demonstrated frequency-branch gain; the
-ETT ablations, where the FITS anchor is enabled, are the decisive test.
-(2)~The Solar ablation characterizes the pre-final configuration and
-must be re-run (final configuration, multiple seeds) before its
-component attributions are trusted. (3)~Zero initialization has not been
-causally isolated from the linear pathway and the schedule --- no
-random-initialization control, convergence curves, or analysis of the
-learned corrections' magnitude yet exists; the released harness includes
-a \texttt{rand\_init} switch precisely for this test. (4)~Baseline
-numbers are quoted from \cite{smamba} rather than re-run; the
-in-framework DLinear re-run (Sect.~\ref{sec:repro}) exposes a $+0.006$
-implementation gap, so comparative claims should be read as
-``competitive with reported results under the same protocol'' until
-S-Mamba, iTransformer, and PatchTST are reproduced in this framework. Architecturally: the fixed look-back of 96 hides cycles
+it. (1)~The frequency-branch gain is demonstrated on a single dataset
+(Solar) at one horizon with $n{=}3$; extending the paired matrix across
+horizons and the remaining datasets would establish where it
+generalizes. (2)~Zero initialization is accuracy-neutral in our
+controlled comparison, but its hypothesized stability value remains
+untested --- convergence curves, failure rates, and the magnitude of the
+learned corrections are open analyses. (3)~Baseline numbers are quoted
+from \cite{smamba} rather than re-run; the in-framework DLinear re-run
+(Sect.~\ref{sec:repro}) exposes a $+0.006$ implementation gap, so
+comparative claims should be read as ``competitive with reported results
+under the same protocol'' until S-Mamba, iTransformer, and PatchTST are
+reproduced in this framework. Architecturally: the fixed look-back of 96 hides cycles
 longer than the window (weather's daily and traffic's weekly periods); we
 hypothesize this explains the remaining deficit on traffic, a claim to be
 tested with longer look-backs (168/336), calendar covariates, and a

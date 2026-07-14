@@ -9,12 +9,12 @@
 | Requirement | Status |
 |---|---|
 | LNCS/LNAI format (`llncs.cls`, `[runningheads]`, T1 fonts) | ✅ compiles cleanly with the official class |
-| Page limit ≤ 15 pages | ✅ 9 pages |
+| Page limit ≤ 15 pages | ✅ 14 pages |
 | Abstract 150–250 words | ✅ 250 words |
 | `\keywords{...}` with `\and` separators | ✅ |
 | **Double-blind review** | ✅ `\anonymoustrue` toggle: anonymous author block, no acknowledgements, code URL replaced by a "released upon acceptance" note |
 | No unresolved references/citations | ✅ 0 warnings |
-| No significant overfull boxes | ✅ (all < 3 pt) |
+| No significant overfull boxes | ✅ (all < 5 pt) |
 
 > The ADMA 2026 CFP page is not reachable from this environment's network;
 > the double-blind and 15-page requirements are taken from the most recent
@@ -49,9 +49,12 @@ pdflatex main.tex && pdflatex main.tex
 - **Baselines** (Table 3): quoted from the S-Mamba paper (same protocol),
   as cited in the table caption; plus a unified-framework DLinear rerun
   on ETTh1 (`results/Main_etth1_dlinear.json`).
-- **Ablations** (Tables 5–6): Solar (H=96, 1 seed, pre-final config —
-  flagged in-text) and Weather (H=96, 3 seeds, final config,
-  `results/Ablation_weather.json`; paired per-seed deltas with t-based
-  95% CIs computed from the per-run values), plus the traffic RevIN probe
-  and the traffic 4-layer-mixer negative result discussed in Sect. 4.3.
+- **Ablations** (Tables 5–6): ETTh1, Solar, and Weather, all H=96,
+  3 seeds, final released configs
+  (`results/Ablation_ETTh1.json`, `results/Ablation_solar_final.json`,
+  `results/Ablation_weather.json`). All deltas are paired per-seed
+  differences vs the full model with t-based 95% CIs (n=3,
+  t=4.303) computed from the per-run values; * marks CIs excluding 0.
+  The traffic RevIN probe and the traffic 4-layer-mixer negative result
+  discussed in Sect. 4.3 are single-run probes.
 - **Figure 1**: TikZ, self-contained in main.tex.
