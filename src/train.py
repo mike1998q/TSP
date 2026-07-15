@@ -75,9 +75,9 @@ def adjust_lr(optimizer, base_lr: float, epoch: int) -> float:
 def evaluate(model, loader, loss_fn, device) -> dict:
     model.eval()
     preds, trues, losses = [], [], []
-    for x, y in loader:
-        x, y = x.to(device), y.to(device)
-        out = model(x)
+    for x, y, stats in loader:
+        x, y, stats = x.to(device), y.to(device), stats.to(device)
+        out = model(x, stats=stats)
         losses.append(loss_fn(out, y).item())
         preds.append(out.cpu().numpy())
         trues.append(y.cpu().numpy())
@@ -142,11 +142,11 @@ def train(cfg: dict) -> dict:
         running = 0.0
         t0 = time.time()
         pbar = tqdm(train_loader, desc=f"epoch {epoch:02d}", leave=False)
-        for x, y in pbar:
-            x, y = x.to(device), y.to(device)
+        for x, y, stats in pbar:
+            x, y, stats = x.to(device), y.to(device), stats.to(device)
             optimizer.zero_grad(set_to_none=True)
             with torch.autocast(device_type=device.type, enabled=use_amp):
-                out = model(x)
+                out = model(x, stats=stats)
                 loss = loss_fn(out, y)
             scaler_amp.scale(loss).backward()
             if grad_clip and grad_clip > 0:

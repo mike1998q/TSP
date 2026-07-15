@@ -138,29 +138,11 @@ def main():
         except Exception as e:  # pragma: no cover
             print(f"[warn] gate extraction failed: {e}")
 
-    fig, (axa, axb) = plt.subplots(1, 2, figsize=(6.6, 2.5))
+    # Single-panel contribution figure (the gate visualization is discussed in
+    # text only; the dispersion diagnostics carry the scale evidence).
+    fig, axb = plt.subplots(1, 1, figsize=(4.4, 2.6))
 
-    # ---- Panel (a): learned gate ----
-    if gate is not None:
-        ch = np.arange(len(gate))
-        axa.bar(ch, gate, color=C_TIME, width=0.68, label="time-branch weight $\\bar g_c$")
-        axa.axhline(args.gate_init, ls="--", lw=0.8, color="#888888")
-        axa.axhline(0.5, ls=":", lw=0.8, color="#bbbbbb")
-        axa.text(len(gate) - 0.4, args.gate_init + 0.01, "init $g_0$",
-                 ha="right", va="bottom", fontsize=6.5, color="#666666")
-        axa.text(len(gate) - 0.4, 0.5 + 0.01, "equal mix",
-                 ha="right", va="bottom", fontsize=6.5, color="#999999")
-        axa.set_ylim(0, 1.0)
-        axa.set_xticks(ch)
-        axa.set_xlabel(f"{args.gate_name} variate index")
-        axa.set_ylabel("gate $\\bar g_c$ (time weight)")
-        axa.set_title("(a) Learned fusion gate", fontsize=8.5, loc="left")
-    else:
-        axa.text(0.5, 0.5, "gate panel: no checkpoint", ha="center", va="center",
-                 transform=axa.transAxes, fontsize=7, color="#999999")
-        axa.set_title("(a) Learned fusion gate", fontsize=8.5, loc="left")
-        axa.set_xticks([])
-        axa.set_yticks([])
+    _ = gate  # extracted for the text discussion; not plotted
 
     # ---- Panel (b): per-branch contribution ----
     names = [c["name"] for c in contrib]
@@ -190,12 +172,12 @@ def main():
     axb.set_xticks(x)
     axb.set_xticklabels(names)
     axb.set_ylabel("$\\Delta$MSE when branch removed")
-    axb.set_title("(b) Per-branch contribution (paired, 95% CI)",
+    axb.set_title("Per-branch contribution (paired, 95% CI)",
                   fontsize=8.5, loc="left")
     axb.legend(frameon=False, fontsize=7, loc="upper left")
     axb.margins(y=0.18)
 
-    for ax in (axa, axb):
+    for ax in (axb,):
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
 

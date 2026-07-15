@@ -29,7 +29,8 @@ class DLinearBaseline(nn.Module):
         self.lin_seasonal = nn.Linear(seq_len, pred_len)
         self.lin_trend = nn.Linear(seq_len, pred_len)
 
-    def forward(self, x: torch.Tensor, return_components: bool = False):
+    def forward(self, x: torch.Tensor, stats: torch.Tensor = None,
+                return_components: bool = False):
         seasonal, trend = self.decomp(x)                       # (B, L, C)
         y = self.lin_seasonal(seasonal.transpose(1, 2)) + self.lin_trend(
             trend.transpose(1, 2)

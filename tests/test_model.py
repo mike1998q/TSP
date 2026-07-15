@@ -261,9 +261,70 @@ def test_dataset_windowing():
     data = generate_synthetic(length=500, channels=3, seed=1)
     ds = SlidingWindowDataset(data, seq_len=96, pred_len=24)
     assert len(ds) == 500 - 96 - 24 + 1
-    x, y = ds[0]
+    x, y, stats = ds[0]
     assert x.shape == (96, 3)
     assert y.shape == (24, 3)
+    assert stats.shape == (0, 3)  # no dispersion resolutions -> empty stats
+
+
+def test_multires_stats_and_dispersion():
+    """Multi-resolution stats and the learned dispersion head: shapes, that
+    D_hat is strictly positive, that history uses only pre-origin data, and
+    that at initialization the head reduces to RevIN de-normalization."""
+    import torch
+
+    from src.models.dispersion import DispersionHead
+
+    res = [24, 48, 96]
+    data = generate_synthetic(length=600, channels=4, seed=2)
+    ds = SlidingWindowDataset(data, seq_len=96, pred_len=24,
+                              stats_resolutions=res, start_offset=0)
+    x, y, stats = ds[0]
+    assert stats.shape == (2 * len(res), 4)  # (mean,std) per resolution
+
+    # No leakage: stats of the shortest resolution equal mean/std of the
+    # samples strictly before the target (the tail of the input window).
+    origin = 96
+    hist = data[origin - res[0]:origin]
+    assert np.allclose(stats[0].numpy(), hist.mean(0), atol=1e-5)
+    assert np.allclose(stats[1].numpy(), hist.std(0), atol=1e-5)
+
+    # Dispersion head: r_hat > 0 everywhere and equals 1 at init (t_hat 0).
+    head = DispersionHead(stats_dim=2 * len(res), pred_len=24)
+    s = stats.unsqueeze(0).transpose(1, 2)  # (1, C, S)
+    r_hat, t_hat = head(s)
+    assert r_hat.shape == (1, 4, 24) and t_hat.shape == (1, 4, 24)
+    assert (r_hat > 0).all()
+    assert torch.allclose(r_hat, torch.ones_like(r_hat), atol=1e-5)
+    assert torch.allclose(t_hat, torch.zeros_like(t_hat), atol=1e-6)
+
+
+def test_dispersion_reduces_to_revin_at_init():
+    """A model with the learned dispersion head must produce exactly the RevIN
+    reconstruction at initialization (r_hat=1, t_hat=0), so the head is a
+    strict generalization that starts from the current de-normalization."""
+    import torch
+
+    from src.models.dual_domain_model import DualDomainForecaster
+
+    res = (24, 48, 96)
+    common = dict(seq_len=96, pred_len=24, n_channels=4, d_model=32,
+                  channel_mixer_layers=0, use_revin=True)
+    torch.manual_seed(0)
+    m_none = DualDomainForecaster(dispersion="none", **common)
+    torch.manual_seed(0)
+    m_learn = DualDomainForecaster(dispersion="learned",
+                                   dispersion_resolutions=res, **common)
+    # Share all weights except the (identity-at-init) dispersion head.
+    m_learn.load_state_dict(m_none.state_dict(), strict=False)
+    m_none.eval(); m_learn.eval()
+
+    x = torch.randn(3, 96, 4)
+    stats = torch.randn(3, 2 * len(res), 4)
+    with torch.no_grad():
+        out_none = m_none(x)
+        out_learn = m_learn(x, stats=stats)
+    assert torch.allclose(out_none, out_learn, atol=1e-5)
 
 
 def test_ett_canonical_borders():

@@ -63,7 +63,21 @@ VARIANTS = {
                            {("model", "channel_mixer_layers"): 1}),
     "freq_mamba": ("bidirectional Mamba over frequency bins instead of the linear filter",
                    {("model", "freq_encoder"): "mamba"}),
+    # --- dispersion chain (STD-style scale forecasting) ---
+    "disp_base": ("base: no RevIN, no dispersion (raw de-norm)",
+                  {("model", "use_revin"): False, ("model", "dispersion"): "none"}),
+    "disp_revin": ("RevIN only (window mean/std de-norm)",
+                   {("model", "use_revin"): True, ("model", "dispersion"): "none"}),
+    "disp_fixed": ("fixed historical dispersion (longest-resolution std)",
+                   {("model", "use_revin"): True, ("model", "dispersion"): "fixed"}),
+    "disp_learned": ("learned dispersion head (per-horizon predicted scale)",
+                     {("model", "use_revin"): True, ("model", "dispersion"): "learned"}),
 }
+
+# The dispersion ablation chain (base -> RevIN -> fixed -> learned), run as an
+# explicit ordered subset: python scripts/run_ablation.py --config ... \
+#     --variants disp_base disp_revin disp_fixed disp_learned --seeds 3
+DISPERSION_CHAIN = ["disp_base", "disp_revin", "disp_fixed", "disp_learned"]
 
 
 def default_variants(cfg: dict) -> list:

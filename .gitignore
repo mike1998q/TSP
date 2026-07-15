@@ -25,3 +25,8 @@ checkpoints/*.json
 # PyTorch / CUDA caches
 *.pth
 .torch_compile_cache/
+
+# Raw datasets (downloaded, not versioned)
+data/*.csv
+data/*.txt
+data/*.gz

@@ -56,41 +56,68 @@ def generate_synthetic(length: int, channels: int, seed: int = 0) -> np.ndarray:
 
 
 class SlidingWindowDataset(Dataset):
-    """Yields (input_window, target_window) pairs from a contiguous series.
+    """Yields ``(input_window, target_window, stats)`` from a contiguous series.
+
+    ``stats`` carries multi-resolution historical statistics for the dispersion
+    head: for each resolution ``r`` in ``stats_resolutions`` it holds the mean
+    and standard deviation of the ``r`` samples ending at the forecast origin
+    (strictly before the target), shape ``(2*len(res), C)``. When no
+    resolutions are given ``stats`` is an empty ``(0, C)`` tensor. All statistics
+    use only information available before the forecast origin (no leakage).
 
     Parameters
     ----------
     data : np.ndarray
         Array of shape (time, channels) already scaled if desired.
-    seq_len : int
-        Length of the look-back input window.
-    pred_len : int
-        Forecast horizon length.
+    seq_len, pred_len : int
+        Look-back and horizon lengths.
+    stats_resolutions : list[int] | None
+        Past-context lengths for the dispersion statistics (e.g. 96/144/288/336).
+    start_offset : int
+        Number of leading rows reserved as history-only context; valid windows
+        are indexed from ``start_offset`` so that boundary windows can look back
+        into the reserved context for their statistics.
     """
 
-    def __init__(self, data: np.ndarray, seq_len: int, pred_len: int):
+    def __init__(self, data: np.ndarray, seq_len: int, pred_len: int,
+                 stats_resolutions: Optional[list] = None, start_offset: int = 0):
         if data.ndim != 2:
             raise ValueError(f"data must be 2D (time, channels), got {data.shape}")
         self.data = np.ascontiguousarray(data, dtype=np.float32)
         self.seq_len = seq_len
         self.pred_len = pred_len
-        n = len(self.data) - seq_len - pred_len + 1
+        self.stats_resolutions = list(stats_resolutions) if stats_resolutions else []
+        self.start_offset = start_offset
+        n = len(self.data) - start_offset - seq_len - pred_len + 1
         if n <= 0:
             raise ValueError(
-                f"Series too short ({len(self.data)}) for seq_len={seq_len} + "
-                f"pred_len={pred_len}."
+                f"Series too short ({len(self.data)}) for start_offset="
+                f"{start_offset} + seq_len={seq_len} + pred_len={pred_len}."
             )
         self.n_samples = n
 
     def __len__(self) -> int:
         return self.n_samples
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        s = idx
-        e = idx + self.seq_len
+    def _stats(self, origin: int) -> np.ndarray:
+        """Multi-resolution (mean, std) of history ending at ``origin``."""
+        rows = []
+        for r in self.stats_resolutions:
+            hist = self.data[max(0, origin - r):origin]      # (<=r, C)
+            rows.append(hist.mean(axis=0))
+            rows.append(hist.std(axis=0))
+        return np.stack(rows, axis=0).astype(np.float32)     # (2*len(res), C)
+
+    def __getitem__(self, idx: int):
+        s = self.start_offset + idx
+        e = s + self.seq_len
         x = self.data[s:e]
         y = self.data[e : e + self.pred_len]
-        return torch.from_numpy(x), torch.from_numpy(y)
+        if self.stats_resolutions:
+            stats = self._stats(e)
+        else:
+            stats = np.zeros((0, x.shape[1]), dtype=np.float32)
+        return torch.from_numpy(x), torch.from_numpy(y), torch.from_numpy(stats)
 
 
 def load_raw_series(
@@ -145,6 +172,7 @@ def build_splits(
     val_ratio: float,
     scale: bool,
     borders: Optional[Tuple[int, int, int]] = None,
+    stats_resolutions: Optional[list] = None,
 ) -> Tuple[SlidingWindowDataset, SlidingWindowDataset, SlidingWindowDataset, Scaler]:
     """Chronologically split, scale (train-fit), and window the series.
 
@@ -178,11 +206,22 @@ def build_splits(
     scaler = Scaler.fit(train_raw)
     proc = scaler.transform(data) if scale else data
 
-    train_slice = proc[:n_train]
-    val_slice = proc[n_train - seq_len : n_train + n_val]
-    test_slice = proc[n_train + n_val - seq_len :]
+    # Reserve enough backward context that boundary windows of val/test can
+    # look back far enough for the longest dispersion resolution (no leakage:
+    # the context is real past data, just before the split).
+    ctx = max(seq_len, max(stats_resolutions) if stats_resolutions else 0)
+    off = ctx - seq_len
 
-    train_ds = SlidingWindowDataset(train_slice, seq_len, pred_len)
-    val_ds = SlidingWindowDataset(val_slice, seq_len, pred_len)
-    test_ds = SlidingWindowDataset(test_slice, seq_len, pred_len)
+    train_slice = proc[:n_train]
+    val_slice = proc[max(0, n_train - ctx) : n_train + n_val]
+    test_slice = proc[max(0, n_train + n_val - ctx) :]
+    val_off = off if n_train - ctx >= 0 else n_train - seq_len
+    test_off = off if n_train + n_val - ctx >= 0 else (n_train + n_val) - seq_len
+
+    kw = {"stats_resolutions": stats_resolutions}
+    train_ds = SlidingWindowDataset(train_slice, seq_len, pred_len, **kw)
+    val_ds = SlidingWindowDataset(val_slice, seq_len, pred_len,
+                                  start_offset=val_off, **kw)
+    test_ds = SlidingWindowDataset(test_slice, seq_len, pred_len,
+                                   start_offset=test_off, **kw)
     return train_ds, val_ds, test_ds, scaler

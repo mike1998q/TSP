@@ -40,6 +40,15 @@ def get_dataloaders(
             f"Unknown data.split_protocol: {protocol!r} (use ratio, ETTh, ETTm)"
         )
 
+    # Multi-resolution statistics are only materialized when the model uses a
+    # dispersion head (keeps the default pipeline unchanged / cheap).
+    mcfg = cfg.get("model", {})
+    stats_resolutions = None
+    if mcfg.get("dispersion", "none") in ("fixed", "learned"):
+        stats_resolutions = mcfg.get(
+            "dispersion_resolutions", [dcfg["seq_len"], 144, 288, 336]
+        )
+
     train_ds, val_ds, test_ds, scaler = build_splits(
         data=data,
         seq_len=dcfg["seq_len"],
@@ -48,6 +57,7 @@ def get_dataloaders(
         val_ratio=dcfg["val_ratio"],
         scale=dcfg.get("scale", True),
         borders=borders,
+        stats_resolutions=stats_resolutions,
     )
 
     common = dict(

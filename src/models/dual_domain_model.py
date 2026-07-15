@@ -32,6 +32,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
+from .dispersion import DispersionHead
 from .freq_branch import FreqBranch
 from .fusion import ForecastFusion
 from .time_branch import TimeBranch
@@ -63,12 +64,16 @@ class DualDomainForecaster(nn.Module):
         use_revin: bool = True,
         time_linear_backbone: bool = True,
         zero_init: bool = True,
+        dispersion: str = "none",
+        dispersion_resolutions: tuple = (),
+        dispersion_hidden: int = 64,
     ):
         super().__init__()
         self.use_revin = use_revin
         self.seq_len = seq_len
         self.pred_len = pred_len
         self.n_channels = n_channels
+        self.dispersion = dispersion
 
         self.time_branch = TimeBranch(
             seq_len=seq_len,
@@ -108,17 +113,32 @@ class DualDomainForecaster(nn.Module):
         self.fusion = ForecastFusion(d_model=d_model, pred_len=pred_len,
                                      mode=fusion, zero_init=zero_init)
 
+        # Optional learned dispersion head: predicts a positive per-horizon
+        # scale from multi-resolution historical statistics (2 features -- mean,
+        # std -- per resolution). At init it reduces to RevIN de-normalization.
+        self.disp_head = None
+        if dispersion == "learned":
+            stats_dim = 2 * len(dispersion_resolutions)
+            self.disp_head = DispersionHead(
+                stats_dim=stats_dim, pred_len=pred_len, hidden=dispersion_hidden,
+                dropout=head_dropout,
+            )
+
     def forward(
-        self, x: torch.Tensor, return_components: bool = False
+        self, x: torch.Tensor, stats: torch.Tensor = None,
+        return_components: bool = False,
     ):
         """x: (B, L, C) -> forecast (B, H, C).
 
-        We standardize each instance by its own last-window mean/std
-        (reversible instance normalization, RevIN-style) to handle
-        distribution shift, then undo it on the output.
+        Each instance is standardized by its own window mean/std (RevIN-style).
+        The forecast is reconstructed as ``Y = T_hat + D_hat (.) S_hat`` where
+        ``S_hat`` is the normalized-space fused forecast. With
+        ``dispersion='none'`` the reconstruction is exactly RevIN
+        (``T_hat=mean``, ``D_hat=std``); with ``'learned'`` the scale/location
+        are predicted per horizon by the dispersion head from ``stats``; with
+        ``'fixed'`` the scale is the longest-resolution historical std.
 
-        With ``return_components=True`` also returns the de-normalized
-        per-branch forecasts and the fusion gate for analysis/ablation.
+        ``stats``: (B, S, C) multi-resolution history stats, or None.
         """
         # Instance normalization (per sample, per channel).
         if self.use_revin:
@@ -132,16 +152,31 @@ class DualDomainForecaster(nn.Module):
 
         time_feat, y_time = self.time_branch(x_norm)   # (B,C,D), (B,C,H)
         freq_feat, y_freq = self.freq_branch(x_norm)   # (B,C,D), (B,C,H)
-        y = self.fusion(time_feat, freq_feat, y_time, y_freq)  # (B,C,H)
+        y = self.fusion(time_feat, freq_feat, y_time, y_freq)  # (B,C,H) = S_hat
 
-        out = y.transpose(1, 2) * std + mean           # (B, H, C)
+        mu = mean.transpose(1, 2)                      # (B, C, 1)
+        sigma = std.transpose(1, 2)                    # (B, C, 1)
+        loc, scale = self._reconstruct(mu, sigma, stats)   # (B,C,H) or (B,C,1)
+        out = (loc + scale * y).transpose(1, 2)        # (B, H, C)
         if not return_components:
             return out
         components = {
-            "time": y_time.transpose(1, 2) * std + mean,
-            "freq": y_freq.transpose(1, 2) * std + mean,
+            "time": (loc + scale * y_time).transpose(1, 2),
+            "freq": (loc + scale * y_freq).transpose(1, 2),
+            "scale": scale, "loc": loc,
         }
         return out, components
+
+    def _reconstruct(self, mu, sigma, stats):
+        """Return (location T_hat, scale D_hat) for de-normalization."""
+        if self.dispersion == "learned" and self.disp_head is not None:
+            r_hat, t_hat = self.disp_head(stats.transpose(1, 2))  # (B,C,H)
+            return mu + t_hat, sigma * r_hat
+        if self.dispersion == "fixed" and stats is not None and stats.shape[1] > 0:
+            # Longest-resolution historical std (last row) as a fixed scale.
+            d_fixed = stats[:, -1, :].unsqueeze(-1).clamp_min(1e-4)  # (B,C,1)
+            return mu, d_fixed
+        return mu, sigma
 
 
 def build_model(cfg: dict, n_channels: int):
@@ -188,4 +223,9 @@ def build_model(cfg: dict, n_channels: int):
         use_revin=mcfg.get("use_revin", True),
         time_linear_backbone=mcfg.get("time_linear_backbone", True),
         zero_init=mcfg.get("zero_init", True),
+        dispersion=mcfg.get("dispersion", "none"),
+        dispersion_resolutions=tuple(
+            mcfg.get("dispersion_resolutions", [dcfg["seq_len"], 144, 288, 336])
+        ),
+        dispersion_hidden=mcfg.get("dispersion_hidden", 64),
     )
