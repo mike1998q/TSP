@@ -57,18 +57,25 @@ pdflatex main.tex && pdflatex main.tex
   t=4.303) computed from the per-run values; * marks CIs excluding 0.
   The traffic RevIN probe and the traffic 4-layer-mixer negative result
   discussed in Sect. 4.3 are single-run probes.
-- **Table 7** (efficiency profile): params, MACs/forecast, and forward
-  activation footprint per dataset, measured by
-  `scripts/profile_efficiency.py` (hardware-independent; no GPU needed).
-  Regenerate with `python scripts/profile_efficiency.py`.
-  - **Dispersion-head efficiency test:** `python scripts/profile_efficiency.py
-    --dispersion` reports the head's overhead per dataset. It adds a fixed
-    **13,056 parameters** independent of the channel count (shared across
-    variates) with GMACs unchanged to three decimals — 14% of the tiny
-    Exchange model but only **0.07% on Traffic**, i.e. essentially free where
-    the channel count is high. The pytest `test_dispersion_head_efficiency`
-    asserts this (overhead == head size, channel-independent, `<10%` of the
-    base model).
+- **Table 7** (efficiency profile): params and MACs/forecast are
+  hardware-independent; **peak GPU memory and throughput are measured on the
+  device** (the model runs on GPU). Measured by `scripts/profile_efficiency.py`,
+  which auto-selects CUDA:
+  ```bash
+  python scripts/profile_efficiency.py --device cuda --batch 32   # full GPU profile
+  python scripts/profile_efficiency.py --dispersion --device cuda # head overhead on GPU
+  ```
+  Timing uses warm-up + `torch.cuda.synchronize()`; peak memory uses
+  `torch.cuda.max_memory_allocated`. On a CPU-only host it falls back with a
+  warning and reports `nan` peak memory (GPU figures require CUDA).
+  - **Dispersion-head efficiency (params, hardware-independent):** the head
+    adds a fixed **13,056 parameters** regardless of channel count (shared
+    across variates), GMACs unchanged to three decimals — 14% of the tiny
+    Exchange model but only **0.07% on Traffic**.
+  - Pytest: `test_dispersion_head_efficiency` asserts the param overhead
+    (== head size, channel-independent, `<10%` of the base model);
+    `test_dispersion_head_gpu_efficiency` measures peak GPU memory and
+    throughput on CUDA (skipped automatically when no GPU is present).
 - **Figure 1**: colour-coded, layered architecture diagram — teal
   normalization, blue time branch and orange frequency branch in shaded
   background panels, violet convex-gate fusion (TikZ, self-contained).

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 import torch
 
 from src.data.dataset import (
@@ -356,14 +357,39 @@ def test_dispersion_head_efficiency():
         base = build(c, "none")
         disp = build(c, "learned")
         overhead = n_params(disp) - n_params(base)
-        # (a) the overhead is exactly the head's parameters ...
+        # (a) the overhead is exactly the head's parameters, (c) the same for
+        #     every channel count (shared across variates), and (b) small.
         assert overhead == head_params
-        # (c) ... which is the same for every channel count (shared across
-        #     variates), and (b) a small fraction of a real model.
-        assert overhead == head_params  # channel-independent by construction
         assert overhead < 0.10 * n_params(base)
     # The head has no per-channel parameters: O(1) in C.
     assert head_params < 15000
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(),
+                    reason="GPU memory/throughput must be measured on CUDA")
+def test_dispersion_head_gpu_efficiency():
+    """The model runs on the GPU, so the dispersion head's memory and
+    throughput overhead is measured on the device (skipped without CUDA)."""
+    from scripts.profile_efficiency import benchmark
+    from src.models.dual_domain_model import DualDomainForecaster
+
+    res = (96, 144, 288, 336)
+    dev = torch.device("cuda")
+
+    def build(dispersion):
+        torch.manual_seed(0)
+        return DualDomainForecaster(
+            seq_len=96, pred_len=96, n_channels=137, d_model=128,
+            channel_mixer_layers=1, use_revin=True, dispersion=dispersion,
+            dispersion_resolutions=res)
+
+    xb = torch.randn(32, 96, 137)
+    statsb = torch.randn(32, 2 * len(res), 137).abs()
+    _, thru_b, mem_b = benchmark(build("none"), xb, None, dev, iters=20)
+    _, thru_d, mem_d = benchmark(build("learned"), xb, statsb, dev, iters=20)
+    assert mem_b > 0 and mem_d > 0            # real GPU peak memory measured
+    assert mem_d < 1.15 * mem_b               # head's GPU-memory overhead small
+    assert thru_d > 0.7 * thru_b              # head does not gut throughput
 
 
 def test_ett_canonical_borders():
