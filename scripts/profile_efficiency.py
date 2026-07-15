@@ -77,19 +77,62 @@ def profile(cfg, n_channels):
 
     seq_len = cfg["data"]["seq_len"]
     x = torch.randn(1, seq_len, n_channels)
+    # Feed dummy statistics when a dispersion head is active.
+    stats = None
+    disp = cfg["model"].get("dispersion", "none")
+    if disp in ("fixed", "learned"):
+        res = cfg["model"].get("dispersion_resolutions", [seq_len, 144, 288, 336])
+        stats = torch.randn(1, 2 * len(res), n_channels).abs()
     with torch.no_grad():
-        model(x)
+        model(x, stats=stats)
     for h in handles:
         h.remove()
 
     return {
+        "params": params,
         "params_m": params / 1e6,
         "macs_m": macs["v"] / 1e6,
         "act_mb": act_bytes["v"] / 1e6,
     }
 
 
+def profile_dispersion_overhead(path, n_channels):
+    """Return (base, learned) profiles so the caller can report the head's
+    extra parameters / compute / memory --- the efficiency test for the
+    dispersion experiment."""
+    base_cfg = load_config(path)
+    base_cfg["data"]["pred_len"] = 96
+    base_cfg.setdefault("model", {})["dispersion"] = "none"
+    disp_cfg = load_config(path)
+    disp_cfg["data"]["pred_len"] = 96
+    disp_cfg.setdefault("model", {})["dispersion"] = "learned"
+    disp_cfg["model"]["dispersion_resolutions"] = [96, 144, 288, 336]
+    return profile(base_cfg, n_channels), profile(disp_cfg, n_channels)
+
+
 def main():
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--dispersion", action="store_true",
+                    help="report the dispersion head's efficiency overhead")
+    args = ap.parse_args()
+
+    if args.dispersion:
+        print(f"{'dataset':12s} {'C':>4s}  {'base params':>12s} "
+              f"{'+head params':>13s} {'overhead':>9s}  {'base GMACs':>10s} "
+              f"{'+head GMACs':>11s}  {'+head act(MB)':>13s}")
+        for label, path, ch in CONFIGS:
+            base, disp = profile_dispersion_overhead(path, ch)
+            dp = disp["params"] - base["params"]
+            frac = dp / base["params"]
+            print(f"{label:12s} {ch:4d}  {base['params']:12,d} "
+                  f"{dp:13,d} {frac:8.2%}  {base['macs_m']/1e3:10.3f} "
+                  f"{disp['macs_m']/1e3:11.3f}  {disp['act_mb']-base['act_mb']:13.2f}")
+        print("\nThe dispersion head adds a fixed number of parameters "
+              "(independent of channel count C): it is shared across variates, "
+              "so its relative cost shrinks as C grows.")
+        return
+
     rows = []
     for label, path, ch in CONFIGS:
         cfg = load_config(path)

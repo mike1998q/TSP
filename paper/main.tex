@@ -912,7 +912,9 @@ from data dimensionality; compute and activation memory instead scale with
 the channel count through the variate mixer (traffic $60$\,GMACs vs.\
 electricity's $22$ at equal width, while ETT and exchange sit two orders of
 magnitude below), making the capacity restraint there cheap as well as
-accurate. Wall-clock figures are left for the extended version.
+accurate. The optional dispersion head adds a fixed $13$K parameters shared
+across variates ($0.07\%$ on Traffic). Wall-clock figures are left for the
+extended version.
 
 \begin{table}[tb]
 \centering
@@ -961,10 +963,9 @@ Limitations, each with its resolving experiment: (1)~the frequency-branch
 gain is shown on one dataset ($n{=}3$); (2)~zero initialization's stability
 value is untested; (3)~baselines are quoted from \cite{smamba}, not re-run
 (the $+0.006$ DLinear gap, Sect.~\ref{sec:repro}); and (4)~the dispersion
-head's full four-variant chain across datasets, with the residual-stationarity
-battery, is reported in the extended version. The fixed 96-step look-back
-hides long cycles (traffic's weekly) that the multi-resolution dispersion
-statistics begin to address.
+head's full four-variant chain, with the residual-stationarity battery, is
+reported in the extended version. The fixed 96-step look-back hides long
+cycles that the multi-resolution dispersion statistics begin to address.
 
 \ifanonymous
 \paragraph{Reproducibility.} Code, configurations, and the ablation harness

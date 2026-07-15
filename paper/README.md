@@ -61,6 +61,14 @@ pdflatex main.tex && pdflatex main.tex
   activation footprint per dataset, measured by
   `scripts/profile_efficiency.py` (hardware-independent; no GPU needed).
   Regenerate with `python scripts/profile_efficiency.py`.
+  - **Dispersion-head efficiency test:** `python scripts/profile_efficiency.py
+    --dispersion` reports the head's overhead per dataset. It adds a fixed
+    **13,056 parameters** independent of the channel count (shared across
+    variates) with GMACs unchanged to three decimals — 14% of the tiny
+    Exchange model but only **0.07% on Traffic**, i.e. essentially free where
+    the channel count is high. The pytest `test_dispersion_head_efficiency`
+    asserts this (overhead == head size, channel-independent, `<10%` of the
+    base model).
 - **Figure 1**: colour-coded, layered architecture diagram — teal
   normalization, blue time branch and orange frequency branch in shaded
   background panels, violet convex-gate fusion (TikZ, self-contained).

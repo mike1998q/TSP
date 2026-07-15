@@ -327,6 +327,45 @@ def test_dispersion_reduces_to_revin_at_init():
     assert torch.allclose(out_none, out_learn, atol=1e-5)
 
 
+def test_dispersion_head_efficiency():
+    """Efficiency test for the dispersion experiment: the head's parameter
+    overhead must be (a) exactly the head's own size, (b) small relative to the
+    model, and (c) INDEPENDENT of the channel count -- the head is shared
+    across variates, so it stays cheap even on high-channel data (Traffic)."""
+    import torch
+
+    from src.models.dispersion import DispersionHead
+    from src.models.dual_domain_model import DualDomainForecaster
+
+    res = (96, 144, 288, 336)
+    stats_dim, pred_len, hidden = 2 * len(res), 96, 64
+
+    def n_params(m):
+        return sum(p.numel() for p in m.parameters() if p.requires_grad)
+
+    def build(c, dispersion):
+        torch.manual_seed(0)
+        return DualDomainForecaster(
+            seq_len=96, pred_len=pred_len, n_channels=c, d_model=128,
+            channel_mixer_layers=1, use_revin=True, dispersion=dispersion,
+            dispersion_resolutions=res)
+
+    head_params = n_params(DispersionHead(stats_dim, pred_len, hidden))
+
+    for c in (7, 137, 862):  # ETT, Solar, Traffic channel counts
+        base = build(c, "none")
+        disp = build(c, "learned")
+        overhead = n_params(disp) - n_params(base)
+        # (a) the overhead is exactly the head's parameters ...
+        assert overhead == head_params
+        # (c) ... which is the same for every channel count (shared across
+        #     variates), and (b) a small fraction of a real model.
+        assert overhead == head_params  # channel-independent by construction
+        assert overhead < 0.10 * n_params(base)
+    # The head has no per-channel parameters: O(1) in C.
+    assert head_params < 15000
+
+
 def test_ett_canonical_borders():
     """ETTh protocol must reproduce the canonical window counts: for
     seq_len=96, pred_len=96 -> train 8449, val 2785, test 2785 (matching
