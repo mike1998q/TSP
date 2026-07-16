@@ -3,17 +3,26 @@
 `main.tex` is a Springer LNCS/LNAI paper (ADMA proceedings format).
 `main.pdf` is the compiled submission version (anonymous).
 
+> **Current version.** `main.tex` is the conservative revision: it drops the
+> dispersion head, the gaps schematic, and the gate/diagnostics figures, and
+> reframes explicit dispersion forecasting as future work. It uses **two
+> self-contained TikZ figures** (architecture; Mamba/mixer block internals)
+> and needs **no external image files** to compile. The dispersion-head code,
+> diagnostics, and efficiency tests remain in the repo for reproducibility but
+> are not part of this version of the paper; `fig_evidence.pdf` /
+> `fig_dispersion.pdf` are likewise unused by it.
+
 ## Format compliance (checked against the official Springer LNCS
 ## template and the ADMA CFP)
 
 | Requirement | Status |
 |---|---|
 | LNCS/LNAI format (`llncs.cls`, `[runningheads]`, T1 fonts) | ✅ compiles cleanly with the official class |
-| Page limit ≤ 15 pages | ✅ 15 pages |
-| Abstract 150–250 words | ✅ 250 words |
+| Page limit ≤ 15 pages | ✅ 14 pages |
+| Abstract 150–250 words | ✅ 226 words |
 | `\keywords{...}` with `\and` separators | ✅ |
 | **Double-blind review** | ✅ `\anonymoustrue` toggle: anonymous author block, no acknowledgements, code URL replaced by a "released upon acceptance" note |
-| No unresolved references/citations | ✅ 0 warnings |
+| No unresolved references/citations | ✅ 0 warnings (28 references, alphabetized) |
 | No significant overfull boxes | ✅ (all < 5 pt) |
 
 > The ADMA 2026 CFP page is not reachable from this environment's network;
