@@ -30,22 +30,24 @@
 > ADMA CFP (2025: LNAI format, ≤ 15 pages, double-blind). Re-verify against
 > the 2026 page before submitting.
 
-## Branch-ablation matrix (resolving experiment)
+## Branch-ablation matrix (run — now in the paper)
 
-The frequency-branch (dual-domain) evidence rests on a single marginal Solar
-cell, so the paper now reports it as exploratory and leads with the two-sided
-capacity-placement findings. The designated resolving experiment is the full
-branch matrix — full / time-only / freq-only on all nine datasets (and
-optionally all four horizons), paired seeds — run on the training GPU:
+The resolving experiment for the frequency-branch question has been run on
+the RTX 5090 and is Table 6 of the paper: full / time-only / freq-only on
+all nine datasets at H=96 plus an ETTh1 horizon sweep (192/336/720), three
+paired seeds (`results/Branch_matrix.json`, produced by
+`scripts/run_branch_matrix.py`). Findings: frequency branch individually
+significant on Solar/ETTm1/Electricity/Exchange; both branches jointly
+necessary on ETTm1/Electricity/Exchange; branches redundant on
+ETTh1 (all horizons)/ETTh2/Weather/Traffic. Every full-model mean
+reproduces the main table, and the Solar cell replicates the earlier
+ablation (+0.0126 vs +0.0114, overlapping CIs). To extend:
 
 ```bash
-python scripts/run_branch_matrix.py                       # 9 datasets, H=96, 3 seeds
 python scripts/run_branch_matrix.py --horizons 96 192 336 720   # full 36-cell matrix
 ```
 
-The runner is resumable (per-cell checkpointing to
-`checkpoints/branch_matrix.json`) and prints a paired-CI markdown/LaTeX
-summary; its CI math reproduces the published Solar cell exactly.
+(resumable; per-cell checkpointing to `checkpoints/branch_matrix.json`).
 
 ## Compiling
 
@@ -83,6 +85,9 @@ pdflatex main.tex && pdflatex main.tex
   t=4.303) computed from the per-run values; * marks CIs excluding 0.
   The traffic RevIN probe and the traffic 4-layer-mixer negative result
   discussed in Sect. 4.3 are single-run probes.
+- **Branch matrix** (Table 6): `results/Branch_matrix.json` — 9 datasets at
+  H=96 + ETTh1 horizon sweep, 3 paired seeds, from
+  `scripts/run_branch_matrix.py` (RTX 5090).
 - **Table 7** (efficiency profile): params and MACs/forecast are
   hardware-independent; **peak GPU memory and throughput are measured on the
   device** (the model runs on GPU). Measured by `scripts/profile_efficiency.py`,

@@ -62,14 +62,15 @@ margins also clear the wider $0.01$ cross-paper caution --- lies within that
 tolerance of the leading reported results on ETTm1, ETTm2, Weather, and
 Electricity, and trails on Traffic and Exchange. Because baseline
 numbers are quoted rather than uniformly re-run, these are cross-paper
-comparisons. The primary ablation finding is two-sided and cross-dataset:
-paired tests at $H{=}96$ show the variate mixer helps Weather yet hurts
-ETTh1, and RevIN helps Weather yet hurts Solar --- capacity and
-normalization must be \emph{placed}, not defaulted. The frequency path is
-significant only on Solar (one marginal cell, labeled exploratory) and
-redundant elsewhere; zero initialization is accuracy-neutral. The evidence
-establishes conditional component placement; the dual-domain benefit remains
-dataset-specific pending a full branch-ablation matrix.
+comparisons. Paired ablations at $H{=}96$ show the variate mixer helps
+Weather yet hurts ETTh1, and RevIN helps Weather yet hurts Solar ---
+capacity and normalization must be \emph{placed}, not defaulted. A
+nine-dataset branch-ablation matrix finds the frequency path significant on
+four datasets (Solar, ETTm1, Electricity, Exchange), both branches jointly
+necessary on three, and the branches redundant elsewhere; zero
+initialization is accuracy-neutral. The evidence establishes
+conditional component placement: dual-domain value is real but
+dataset-conditional.
 \keywords{Time series forecasting \and State-space models \and Mamba \and
 Frequency domain \and Multivariate analysis}
 \end{abstract}
@@ -123,9 +124,12 @@ accuracy-neutral. The branch forecasts form a learned convex combination.
 The strongest ablation evidence concerns \emph{placement}: removing the
 variate mixer hurts Weather whereas adding it hurts ETTh1, each with a
 paired CI excluding zero, and normalization shows the same two-sided
-pattern. The frequency path is supported on a single dataset only (Solar,
-with a CI barely excluding zero) and is within noise on ETTh1 and Weather,
-so the dual-domain claim is explicitly conditional and exploratory.
+pattern. A nine-dataset branch-ablation matrix then locates where each
+domain matters: the frequency path is individually significant on four
+datasets (Solar, ETTm1, Electricity, Exchange), both branches are jointly
+necessary on three, and the branches are redundant on ETTh1, ETTh2,
+Weather, and Traffic --- so the dual-domain claim is supported, but
+explicitly dataset-conditional.
 
 \noindent\textbf{Contributions.} \textbf{(1)}~Two-sided, cross-dataset
 evidence that state-space capacity and normalization choices can help or
@@ -134,11 +138,11 @@ hurt --- the case for per-dataset placement over universal defaults;
 corrections and an optional dormant spectral pathway, with a controlled
 initialization ablation; \textbf{(3)}~a dual-domain architecture whose
 output is a gated convex combination of independently testable branch
-forecasts, with its single-dataset support reported as exploratory; and
-\textbf{(4)}~three-seed results on nine benchmarks plus paired ablations on
-three datasets, including statistically supported negative and
-dataset-dependent findings, with a released harness for the full
-branch-ablation matrix.
+forecasts, supported by a nine-dataset branch-ablation matrix that finds
+the frequency path significant on four datasets and redundant on the rest;
+and \textbf{(4)}~three-seed results on nine benchmarks plus paired
+ablations, including statistically supported negative and
+dataset-dependent findings.
 
 \section{Related Work}
 
@@ -782,19 +786,54 @@ is dataset-dependent, in \emph{both} directions --- is the argument for
 per-dataset switches over universal defaults, and it does not depend on any
 single dataset.
 
-\paragraph{Branch-level evidence is exploratory.} By contrast, the
-frequency-branch case rests on one cell: on Solar, removing the
-frequency branch degrades MSE by $+0.0114$ with a CI of $[+0.001,+0.021]$ ---
-the only frequency-branch comparison whose paired CI excludes zero, and its
-lower bound barely does. On ETTh1 and Weather both single-branch variants lie
-within their CIs (on ETTh1 the frequency branch \emph{alone} even matches the
-full model, $-0.0007$). A single marginal result on one dataset at one
-horizon cannot carry a dual-domain conclusion, so we report it as
-exploratory: the frequency path is an optional component with measured
-support on Solar and no detected branch-removal effect elsewhere. The
-released harness includes a branch-ablation matrix (full / time-only /
-freq-only on all nine datasets and four horizons, paired seeds) as the
-designated resolving experiment.
+\paragraph{Branch matrix: where each domain matters.} Because a single
+Solar cell cannot carry a dual-domain conclusion, we ran the full
+branch-ablation matrix --- full / time-only / freq-only on all nine
+datasets at $H{=}96$ under paired seeds, plus an ETTh1 horizon sweep
+(Table~\ref{tab:branchmatrix}). Every full-model mean reproduces the
+corresponding main-table entry, and the Solar cell replicates the earlier
+ablation ($+0.0126$ vs.\ $+0.0114$, overlapping CIs). Removing the
+frequency branch significantly degrades \emph{four} of nine datasets ---
+Solar ($+0.0126^{*}$), ETTm1 ($+0.0073^{*}$), Electricity ($+0.0019^{*}$),
+and Exchange ($+0.0015^{*}$) --- and removing the time branch significantly
+degrades four (ETTm1 $+0.0196^{*}$, ETTm2 $+0.0060^{*}$, Exchange
+$+0.0058^{*}$, Electricity $+0.0017^{*}$); on ETTm1, Electricity, and
+Exchange \emph{both} branches are individually necessary. On ETTh1, ETTh2,
+Weather, and Traffic no branch-removal effect is detected, and the ETTh1
+horizon sweep shows this redundancy persists at $H{=}192/336/720$ --- it is
+not an artifact of the short horizon. The dual-domain claim is therefore
+supported, but dataset-conditional: the frequency path earns its place on
+four benchmarks and is a no-cost redundancy on the rest.
+
+\begin{table}[tb]
+\centering
+\caption{Branch-ablation matrix: paired per-seed $\Delta$MSE versus the
+full model when one branch is removed (three seeds; $t$-based 95\% CIs;
+$^{*}$\,CI excludes zero). All nine datasets at $H{=}96$, plus an ETTh1
+horizon sweep. Full-model means match Table~\ref{tab:horizons}.}
+\label{tab:branchmatrix}
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}llcc@{}}
+\toprule
+Dataset & $H$ & freq removed: $\Delta$ [95\% CI] & time removed: $\Delta$ [95\% CI] \\
+\midrule
+ETTh1 & 96 & $+0.0034$ $[-0.0089,+0.0157]$ & $-0.0007$ $[-0.0039,+0.0025]$ \\
+ETTh2 & 96 & $+0.0006$ $[-0.0203,+0.0215]$ & $-0.0031$ $[-0.0064,+0.0003]$ \\
+ETTm1 & 96 & $+0.0073$ $[+0.0029,+0.0118]^{*}$ & $+0.0196$ $[+0.0179,+0.0213]^{*}$ \\
+ETTm2 & 96 & $+0.0020$ $[-0.0004,+0.0045]$ & $+0.0060$ $[+0.0049,+0.0071]^{*}$ \\
+Weather & 96 & $+0.0008$ $[-0.0020,+0.0036]$ & $+0.0006$ $[-0.0039,+0.0051]$ \\
+Solar & 96 & $+0.0126$ $[+0.0077,+0.0175]^{*}$ & $+0.0052$ $[-0.0135,+0.0238]$ \\
+Electricity & 96 & $+0.0019$ $[+0.0006,+0.0032]^{*}$ & $+0.0017$ $[+0.0014,+0.0020]^{*}$ \\
+Traffic & 96 & $-0.0015$ $[-0.0092,+0.0061]$ & $+0.0013$ $[-0.0052,+0.0078]$ \\
+Exchange & 96 & $+0.0015$ $[+0.0001,+0.0029]^{*}$ & $+0.0058$ $[+0.0047,+0.0069]^{*}$ \\
+\midrule
+ETTh1 & 192 & $+0.0005$ $[-0.0140,+0.0150]$ & $-0.0001$ $[-0.0066,+0.0065]$ \\
+ETTh1 & 336 & $-0.0047$ $[-0.0248,+0.0154]$ & $-0.0003$ $[-0.0142,+0.0137]$ \\
+ETTh1 & 720 & $+0.0096$ $[-0.0387,+0.0579]$ & $+0.0176$ $[-0.0019,+0.0372]$ \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \begin{table}[tb]
 \centering
@@ -831,17 +870,19 @@ worse held-out error, so the released ETT configurations disable it.
 
 \subsection{Analysis}
 
-\paragraph{Where each domain wins.} On Solar, removing the frequency branch
-increases MSE by $+0.0114$ with a CI excluding zero, whereas removing the time
-branch yields $+0.0051$ with a CI that includes zero
-(Table~\ref{tab:ablation}). Thus, at $n{=}3$, only the frequency-path
-contribution is statistically supported --- and only in this one cell, which
-is why Sect.~\ref{sec:ablation} labels it exploratory rather than load-bearing.
-ETTh1 and Weather instead show substantial branch redundancy. Because Solar's
-10-minute daily cycle spans $144{>}L{=}96$ samples, the spectral path cannot
-observe a complete daily period; its measured benefit should therefore be
-attributed to shorter-scale spectral structure, not to recovery of the full
-daily cycle.
+\paragraph{Where each domain wins.} The matrix
+(Table~\ref{tab:branchmatrix}) separates three regimes. On Solar the
+frequency path dominates: removing it costs $+0.0126^{*}$ while removing the
+time branch is within noise --- yet because Solar's 10-minute daily cycle
+spans $144{>}L{=}96$ samples, the spectral path cannot observe a complete
+daily period, so its benefit must come from shorter-scale spectral
+structure. On ETTm1, Electricity, and Exchange the branches are
+complementary --- removing \emph{either} one significantly degrades the
+forecast. On ETTh1 (at all four horizons), ETTh2, Weather, and Traffic the
+branches are interchangeable, and the convex gate makes carrying the unused
+path harmless. This heterogeneity is the dual-domain analogue of the
+capacity-placement finding: which domain a dataset needs is itself
+dataset-dependent.
 
 \paragraph{Complexity accounting.} Table~\ref{tab:efficiency} reports
 model-only, hardware-independent estimates rather than comparative runtime
@@ -887,27 +928,29 @@ cross-variate mixing. Against quoted results under the look-back-96 protocol,
 it shows average-MSE gaps above the descriptive tolerance on Solar, ETTh1,
 and ETTh2 (only Solar and ETTh1 also clearing the wider $0.01$ cross-paper
 caution), lies within that tolerance of the strongest reported result on four
-datasets, and trails on Exchange and Traffic. The conclusion the ablations
-robustly support is \emph{placement}: the variate mixer helps Weather yet
+datasets, and trails on Exchange and Traffic. The ablations support two
+conclusions. First, \emph{placement}: the variate mixer helps Weather yet
 hurts ETTh1 and normalization helps Weather yet hurts Solar, each direction
-backed by a paired CI excluding zero on a different dataset. The frequency
-branch, in contrast, is supported only by a single marginal Solar cell and is
-reported as exploratory; zero initialization is accuracy-neutral and retained
-only for its controlled linear starting point. These findings establish
-conditional component placement, not universal superiority of every module
-and not a general dual-domain gain.
+backed by a paired CI excluding zero on a different dataset. Second, the
+nine-dataset branch matrix locates the dual-domain benefit: the frequency
+branch is individually significant on Solar, ETTm1, Electricity, and
+Exchange, both branches are jointly necessary on three of those, and the
+branches are redundant on ETTh1 (across all four horizons), ETTh2, Weather,
+and Traffic. Zero initialization is accuracy-neutral and retained only for
+its controlled linear starting point. These findings establish conditional
+component placement: dual-domain value is real on four of nine benchmarks
+and structurally harmless on the rest, not a universal gain.
 
 The evidence remains limited in several ways. Baselines other than DLinear on
-ETTh1 are quoted rather than rerun in one pipeline; component ablations cover
-only $H{=}96$ and three seeds; the frequency-branch question in particular
-needs the full branch-ablation matrix (full / time-only / freq-only across
-all nine datasets and four horizons, paired seeds), for which the released
-harness provides a resumable runner; schedule sensitivity and head-norm
-dynamics are not measured; and the complexity table lacks wall-clock and
-matched-baseline runtime. The fixed 96-step look-back also leaves the Traffic
-weekly-cycle hypothesis untested, while Exchange at $H{=}720$ remains a
-notable failure case. Explicit forecasting of time-varying dispersion is left
-as future work rather than claimed as part of the evaluated model.
+ETTh1 are quoted rather than rerun in one pipeline; the branch matrix covers
+all datasets only at $H{=}96$ (the horizon sweep is ETTh1-only), the other
+component ablations only $H{=}96$, all at three seeds without family-wise
+correction; schedule sensitivity and head-norm dynamics are not measured; and
+the complexity table lacks wall-clock and matched-baseline runtime. The fixed
+96-step look-back also leaves the Traffic weekly-cycle hypothesis untested,
+while Exchange at $H{=}720$ remains a notable failure case. Explicit
+forecasting of time-varying dispersion is left as future work rather than
+claimed as part of the evaluated model.
 
 \ifanonymous
 \paragraph{Reproducibility.} Code, configurations, and the ablation harness
