@@ -77,7 +77,7 @@ pdflatex main.tex && pdflatex main.tex
 - **Baselines** (Table 3): quoted from the S-Mamba paper (same protocol),
   as cited in the table caption; plus a unified-framework DLinear rerun
   on ETTh1 (`results/Main_etth1_dlinear.json`).
-- **Ablations** (Tables 5–6): ETTh1, Solar, and Weather, all H=96,
+- **Ablations** (Tables 5 and 7): ETTh1, Solar, and Weather, all H=96,
   3 seeds, final released configs
   (`results/Ablation_ETTh1.json`, `results/Ablation_solar_final.json`,
   `results/Ablation_weather.json`). All deltas are paired per-seed
@@ -88,7 +88,7 @@ pdflatex main.tex && pdflatex main.tex
 - **Branch matrix** (Table 6): `results/Branch_matrix.json` — 9 datasets at
   H=96 + ETTh1 horizon sweep, 3 paired seeds, from
   `scripts/run_branch_matrix.py` (RTX 5090).
-- **Table 7** (efficiency profile): params and MACs/forecast are
+- **Table 8** (complexity profile): params and MACs/forecast are
   hardware-independent; **peak GPU memory and throughput are measured on the
   device** (the model runs on GPU). Measured by `scripts/profile_efficiency.py`,
   which auto-selects CUDA:
