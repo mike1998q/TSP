@@ -19,7 +19,7 @@
 |---|---|
 | LNCS/LNAI format (`llncs.cls`, `[runningheads]`, T1 fonts) | ✅ compiles cleanly with the official class |
 | Page limit ≤ 15 pages | ✅ 15 pages (at the limit — no headroom) |
-| Abstract 150–250 words | ✅ 250 words |
+| Abstract 150–250 words | ✅ 248 words |
 | `\keywords{...}` with `\and` separators | ✅ |
 | **Double-blind review** | ✅ `\anonymoustrue` toggle: anonymous author block, no acknowledgements, code URL replaced by a "released upon acceptance" note |
 | No unresolved references/citations | ✅ 0 warnings (28 references, alphabetized) |
