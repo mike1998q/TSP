@@ -19,7 +19,7 @@
 |---|---|
 | LNCS/LNAI format (`llncs.cls`, `[runningheads]`, T1 fonts) | ✅ compiles cleanly with the official class |
 | Page limit ≤ 15 pages | ✅ 15 pages (at the limit — no headroom) |
-| Abstract 150–250 words | ✅ 248 words |
+| Abstract 150–250 words | ✅ 235 words |
 | `\keywords{...}` with `\and` separators | ✅ |
 | **Double-blind review** | ✅ `\anonymoustrue` toggle: anonymous author block, no acknowledgements, code URL replaced by a "released upon acceptance" note |
 | No unresolved references/citations | ✅ 0 warnings (28 references, alphabetized) |
@@ -47,6 +47,15 @@ cell replicates the earlier ablation (+0.0126 vs +0.0114, overlapping
 CIs). Remaining gap: Electricity/Traffic/Exchange at H=192/336/720
 (resumable: `python scripts/run_branch_matrix.py --datasets electricity
 traffic exchange_rate --horizons 192 336 720`).
+
+## Data-correlation (PCC) analysis
+
+`scripts/compute_pcc.py` computes the mean/median absolute pairwise Pearson
+correlation per dataset on the training split (`results/pcc.json`) — the
+statistic behind the datasets table's PCC column and the "data correlations
+predict the mixer" analysis paragraph. Weather's raw file was unreachable
+from this environment, so its cell is "—"; run the script where weather.csv
+is available to fill it in.
 
 ## Compiling
 

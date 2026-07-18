@@ -45,32 +45,30 @@ Second Author\inst{1}}
 \maketitle
 
 \begin{abstract}
-Long-term multivariate forecasting must reconcile local time-domain dynamics
-with periodic structure represented compactly in the frequency domain. We
-present \model{}, a dual-domain framework whose decomposition-based time
-branch and learned spectral branch each produce a forecast, fused by a convex
-gate. Two guidelines organize the design. First, a DLinear-style
-time backbone is trained alongside zero-initialized nonlinear
-corrections; the optional FITS-style spectral map starts dormant, so the
-initial prediction is linear in the instance-normalized window. Second,
-state-space capacity is placed per dataset: a bidirectional Mamba over
-variates is enabled where cross-channel structure helps and disabled where
-it overfits. Across nine look-back-96 benchmarks and three seeds,
-\model{} beats reported baselines by more than the $0.005$ descriptive
-tolerance on Solar, ETTh1, and ETTh2 --- only Solar and ETTh1 also clear the
-wider $0.01$ cross-paper caution --- lies within tolerance of the leading
-reported results on four further datasets, and trails on Traffic and
-Exchange. Because baseline
-numbers are quoted rather than uniformly re-run, these are cross-paper
-comparisons. Paired ablations show the variate mixer helps
-Weather yet hurts ETTh1 and RevIN helps Weather yet hurts Solar ---
-capacity and normalization must be \emph{placed}, not defaulted. A
-27-cell branch-ablation matrix (nine datasets; four horizons on six) finds
-the frequency path significant on four datasets at the 96-step horizon,
-fading at longer ones, the time branch necessary on ETTm1 at every horizon,
-and the branches redundant elsewhere; zero initialization is
-accuracy-neutral. The evidence establishes conditional component placement:
-dual-domain value is conditional on dataset and horizon.
+From power grids to road networks, long-term multivariate forecasting must
+capture local time-domain dynamics, periodic structure that is compact in
+the frequency domain, and cross-channel dependencies whose strength varies
+enormously across datasets: the mean absolute inter-channel correlation
+spans $0.31$ on ETTh1 to $0.91$ on Solar. Yet most deep forecasters
+hard-wire one choice on every axis --- a single representation, a single
+channel regime, uniform capacity for all data. We present \model{}, a
+dual-domain state-space framework that makes these choices testable: a
+decomposition-based time branch and a learned spectral branch each produce
+a forecast, fused by a convex gate; a DLinear-style backbone with
+zero-initialized corrections makes the initial prediction linear in the
+instance-normalized window; and a bidirectional Mamba over variates is a
+per-dataset switch guided by measured channel coupling. Across nine
+look-back-96 benchmarks (three seeds), \model{} beats reported baselines
+beyond a $0.005$ descriptive tolerance on Solar, ETTh1, and ETTh2 --- the
+first two also clear a wider $0.01$ cross-paper caution --- ties the
+leading reported results on four datasets, and trails on Traffic and
+Exchange. Paired ablations track the correlation split: the variate mixer
+helps Weather yet hurts weakly coupled ETTh1, and RevIN helps Weather yet
+hurts Solar. A 27-cell branch-ablation matrix finds the frequency path
+significant on four datasets at the 96-step horizon, fading at longer
+ones, and the branches redundant elsewhere. The evidence maps which data
+characteristics reward which components: conditional placement, not
+universal gain.
 \keywords{Time series forecasting \and State-space models \and Mamba \and
 Frequency domain \and Multivariate analysis}
 \end{abstract}
@@ -102,9 +100,12 @@ spectral mixing only \cite{frets} --- do not expose both views as separately
 testable forecast paths.
 \textbf{Gap~3: cross-variate capacity can help or hurt.} Cross-variate
 mixing is effective on several high-dimensional benchmarks
-\cite{itransformer,smamba}, but our controlled results show that the same
-module can overfit a low-channel dataset. This motivates testing the mixer
-as an explicit option rather than assuming one setting is universal.
+\cite{itransformer,smamba,crossformer}, but the underlying data property it
+exploits --- how strongly channels are actually correlated --- differs by a
+factor of three across the standard benchmarks (Table~\ref{tab:datasets}),
+and our controlled results show the same module can overfit a weakly
+coupled, low-channel dataset. This motivates treating the mixer as an
+explicit, data-diagnosable option rather than a universal setting.
 
 We answer these three gaps with \model{} (Fig.~\ref{fig:arch}), mapping
 each to one structural remedy: \emph{(i)}~a DLinear-style time backbone with
@@ -146,69 +147,69 @@ including statistically supported negative and dataset-dependent findings.
 
 \section{Related Work}
 
-\paragraph{Transformer forecasters.} Informer \cite{informer}, Autoformer
-\cite{autoformer} and FEDformer \cite{fedformer} adapt attention to long
-sequences via sparsity, decomposition, and frequency mixing;
-Non-stationary Transformers
-\cite{nonstationary} restore the stationarity that normalization removes,
-and Crossformer \cite{crossformer} attends across both time and variates.
-PatchTST \cite{patchtst} treats sub-series patches as tokens with channel
-independence; iTransformer \cite{itransformer} inverts the axes and attends
-over \emph{variates}, establishing that cross-channel modeling drives
-accuracy on high-dimensional benchmarks. SOFTS \cite{softs} uses a centralized
-series core for linear-complexity channel interaction, while ModernTCN
-\cite{moderntcn} combines temporal and cross-variable convolutions. \model{}
-adopts the variate-mixing insight with bidirectional SSMs, treats that mixer as
-optional, and couples it to an explicit frequency branch and a linear time
-backbone.
+\paragraph{Time series analysis problems.} Deep models now serve the full
+spectrum of time series mining tasks --- forecasting, classification,
+anomaly detection, and imputation --- often through shared general-purpose
+backbones such as TimesNet \cite{timesnet}, whose representations transfer
+across tasks. Long-term multivariate \emph{forecasting}, our setting, is
+the most benchmark-standardized of these problems: fixed look-back,
+multi-horizon evaluation, and shared splits \cite{informer,itransformer}
+make it the natural arena for controlled architectural evidence, and
+findings about which structures a dataset rewards typically carry over to
+the sibling tasks that reuse forecasting backbones.
 
-\paragraph{Linear and frequency-domain models.} DLinear/NLinear
-\cite{dlinear} showed decomposition plus a linear map rivals Transformers;
-RLinear \cite{rlinear} added reversible instance normalization \cite{revin},
-and the MLP-based TiDE \cite{tide} and TimeMixer \cite{timemixer} confirm
-that lightweight mixers stay competitive. N-BEATS \cite{nbeats} and N-HiTS
-\cite{nhits} provide the closest residual-forecasting precedents: they build
-forecasts through successive residual blocks, whereas \model{} retains a
-direct time-domain linear forecast and trains selective-SSM features as a
-parallel correction. In the spectrum, FreTS \cite{frets} learns
-frequency-domain MLPs and FITS \cite{fits} forecasts with a single
-complex-linear interpolation of the low-passed spectrum at negligible cost.
-The \model{} hypothesis class includes related linear configurations, but
-joint optimization does not guarantee recovering the corresponding standalone
-models.
+\paragraph{Temporal-dependency models.} One line models dependencies along
+the time axis only. Transformer variants adapt attention to long sequences
+via sparsity, decomposition, and frequency enhancement
+\cite{informer,autoformer,fedformer}, patching \cite{patchtst}, or explicit
+de-/re-stationarization \cite{nonstationary}. A second family shows that
+\emph{linear} maps remain competitive: DLinear/NLinear \cite{dlinear},
+RLinear with reversible instance normalization \cite{rlinear,revin}, the
+MLP-based TiDE \cite{tide} and TimeMixer \cite{timemixer}, and the
+residual-stacked N-BEATS/N-HiTS \cite{nbeats,nhits}, our closest
+residual-forecasting precedents. A third works in the spectrum: FreTS
+\cite{frets} learns frequency-domain MLPs and FITS \cite{fits} forecasts
+with one complex-linear interpolation of the low-passed spectrum.
+Decomposition-based designs (STL \cite{stl}, SCINet \cite{scinet}, and the
+seasonal-trend-dispersion view of STD \cite{std}) make component structure
+explicit; RevIN, used here as a per-dataset switch, normalizes windows
+reversibly but neither extracts nor forecasts dispersion, and we claim no
+STD-style decomposition.
 
-\paragraph{State-space models.} Mamba \cite{mamba} introduced selective SSMs
-with input-dependent dynamics and linear-time scans, extended by Mamba-2
-\cite{mamba2}. In forecasting, S-Mamba \cite{smamba} and TimeMachine
-\cite{timemachine} apply bidirectional Mamba over variate tokens, and further
-works explore frequency-domain SSMs \cite{fmamba}. \model{} unifies these threads:
-causal Mamba over time, bidirectional Mamba over frequency bins and
-variates, placed per dataset rather than uniformly.
+\paragraph{Cross-dimensional (spatial--temporal) models.} A second line
+treats the variate dimension as a first-class axis. Crossformer
+\cite{crossformer} is the classic Transformer of this type: it embeds the
+series into a two-dimensional patch grid and attends over \emph{both} the
+temporal and the cross-variate (spatial) dimension. iTransformer
+\cite{itransformer} inverts the axes and attends over variate tokens only;
+SOFTS \cite{softs} reaches linear-complexity channel interaction through a
+centralized core, and ModernTCN \cite{moderntcn} interleaves temporal and
+cross-variable convolutions. Selective state-space models bring linear-time
+scans to the same axes: Mamba \cite{mamba,mamba2} over time, and S-Mamba
+\cite{smamba}, TimeMachine \cite{timemachine}, and FMamba \cite{fmamba}
+over variate tokens. \model{} sits in this lineage --- causal Mamba over
+time, bidirectional Mamba over variates and frequency bins --- but treats
+the spatial dimension as a \emph{switchable} module rather than a fixed
+design commitment.
 
-\paragraph{Zero-initialized corrections.} Zero-initialized residual paths are
-established optimization devices; for example, ReZero \cite{rezero} learns a
-zero-initialized residual gate to improve signal propagation in very deep
-networks. Our use is narrower and forecasting-specific: a complete linear
-forecast remains available while nonlinear time- and frequency-domain heads
-start silent. Because the controlled comparison is accuracy-neutral, we treat
-this as an interpretable initialization convention, not a new optimization
-theorem or an accuracy contribution.
-
-\paragraph{Decomposition and heteroscedasticity.} Splitting a series into
-interpretable components is a century-old idea: classical additive models,
-STL \cite{stl}, wavelet analysis, EMD, and SSA extract a trend, a seasonal
-part, and an irregular remainder, and learned decompositions such as SCINet
-\cite{scinet} carry it into deep forecasters. A
-recurring limitation, made explicit by the seasonal-trend-\emph{dispersion}
-decomposition (STD) \cite{std}, is that time-varying scale can remain
-entangled with seasonal or irregular components. RevIN \cite{revin}, used in
-\model{} as a per-dataset option, is related only at the level of motivation:
-it reversibly normalizes each input window by its observed mean and standard
-deviation, but neither extracts an interpretable dispersion component nor
-forecasts future scale. We therefore do not claim an STD/STDR-style
-decomposition. Instead, the present experiments test the narrower question
-of when window-level normalization helps or hurts, while explicit dispersion
-forecasting remains future work.
+\paragraph{Research gap.} Across both lines, three commitments are usually
+hard-wired. (i)~Each model adopts one representation --- time steps
+\emph{or} spectra --- so the other view's contribution is never separately
+testable. (ii)~Cross-dimensional models such as Crossformer apply the same
+spatial--temporal capacity to every dataset, although channel coupling
+varies enormously across benchmarks (mean absolute cross-channel Pearson
+correlation ranges from $0.31$ on ETTh1 to $0.91$ on Solar;
+Table~\ref{tab:datasets}). (iii)~Deep designs typically discard the linear
+maps that remain near state-of-the-art, relearning them implicitly.
+No prior work, to our knowledge, pairs a per-component switchboard with
+controlled, seed-paired evidence of \emph{where} --- for which datasets,
+which correlation regimes, and which horizons --- each structure pays.
+\model{} is built to answer exactly that question: independently testable
+time/frequency forecast paths, a switchable variate mixer, zero-initialized
+corrections in the spirit of ReZero \cite{rezero} (retained here as an
+interpretable initialization convention, shown accuracy-neutral), and a
+27-cell branch-ablation matrix connecting data characteristics to component
+value.
 
 \section{Method}
 \label{sec:method}
@@ -342,12 +343,15 @@ shared across variates.
 
 \emph{Selective-scan correction.} The pair $[\mathbf{X}_s; \mathbf{X}_t]$
 is embedded per time step and processed channel-independently by a stack
-of Mamba layers \cite{mamba} (Fig.~\ref{fig:blocks}a). A Mamba layer
-discretizes a state-space system with input-dependent parameters
-$(\boldsymbol{\Delta}, \mathbf{B}, \mathbf{C})$:
+of Mamba layers \cite{mamba} (Fig.~\ref{fig:blocks}a). Following the
+zero-order-hold discretization of \cite{mamba}, the continuous parameters
+$(\boldsymbol{\Delta}, \mathbf{A}, \mathbf{B})$ become
+$\bar{\mathbf{A}}_k = \exp(\boldsymbol{\Delta}_k \mathbf{A})$ and
+$\bar{\mathbf{B}}_k = \boldsymbol{\Delta}_k \mathbf{B}_k$, and the layer
+runs the recurrence
 \begin{equation}
-\mathbf{h}_k = e^{\boldsymbol{\Delta}_k \mathbf{A}}\,\mathbf{h}_{k-1} +
-\boldsymbol{\Delta}_k \mathbf{B}_k\, u_k, \qquad
+\mathbf{h}_k = \bar{\mathbf{A}}_k\,\mathbf{h}_{k-1} +
+\bar{\mathbf{B}}_k\, u_k, \qquad
 y_k = \mathbf{C}_k^{\top} \mathbf{h}_k + D\, u_k ,
 \label{eq:ssm}
 \end{equation}
@@ -356,9 +360,9 @@ the $d_{\mathrm{in}}$ feature dimensions: per dimension, the state is
 $\mathbf{h}_k \in \mathbb{R}^{N}$, $\mathbf{A} \in \mathbb{R}^{N}$ is
 diagonal, the input $u_k$ is scalar, and
 $(\boldsymbol{\Delta}_k \in \mathbb{R},\; \mathbf{B}_k, \mathbf{C}_k \in
-\mathbb{R}^{N})$ are produced from $u$ by learned linear maps
-\cite{mamba}. The last state, summed with a
-whole-window linear embedding $\mathbf{W}_e \tilde{\mathbf{x}}^{(c)}$
+\mathbb{R}^{N})$ are produced from $u$ by learned linear maps ---
+the input-dependent selectivity of \cite{mamba}. The last state, summed
+with a whole-window linear embedding $\mathbf{W}_e \tilde{\mathbf{x}}^{(c)}$
 (one per variate, as in \cite{smamba}), forms the branch feature
 $\mathbf{f}_{\mathrm{time}} \in \mathbb{R}^{C \times d}$. A head
 $\phi_{\mathrm{time}}$ maps features to a horizon correction:
@@ -370,9 +374,7 @@ $\phi_{\mathrm{time}}$ maps features to a horizon correction:
 \end{equation}
 Because $\phi_{\mathrm{time}}$ is zero-initialized, the branch's output at
 initialization equals its (randomly initialized) DLinear-style backbone;
-the SSM learns only what the linear map cannot express. We run the
-recurrence in fp32 even under mixed precision, as the $L$-step
-accumulation overflows in half precision and silently destroys training.
+the SSM learns only what the linear map cannot express.
 
 \subsection{Frequency Branch: Spectral Filtering and a Dormant Spectral Pathway}
 \label{sec:freq}
@@ -438,7 +440,7 @@ active through its encoder and forecast head.
 \node[b, below=of anorm] (aproj) {in\_proj (Linear)};
 \node[b, below=of aproj] (aconv) {causal Conv1d $+$ SiLU};
 \node[scan, below=of aconv] (ascan)
-  {selective scan\\[1pt]$\mathbf{h}_k{=}e^{\boldsymbol{\Delta}_k\mathbf{A}}\mathbf{h}_{k-1}{+}\boldsymbol{\Delta}_k\mathbf{B}_k u_k$\\$y_k{=}\mathbf{C}_k^{\top}\mathbf{h}_k{+}Du_k$};
+  {selective scan\\[1pt]$\mathbf{h}_k{=}\bar{\mathbf{A}}_k\mathbf{h}_{k-1}{+}\bar{\mathbf{B}}_k u_k$\\$y_k{=}\mathbf{C}_k^{\top}\mathbf{h}_k{+}Du_k$};
 \node[op, below=3.5mm of ascan] (agate) {$\odot$};
 \node[b, below=3.5mm of agate] (aout) {out\_proj (Linear)};
 \node[op, below=3mm of aout] (aadd) {$+$};
@@ -489,16 +491,20 @@ feed-forward block (the S-Mamba design \cite{smamba}).}
 
 Channel independence is a strong baseline \cite{patchtst,dlinear} but
 leaves accuracy on the table when variates are coupled
-\cite{itransformer,smamba}. Inside each branch, before its head, we
-optionally run $M$ layers of \emph{bidirectional} Mamba over the $C$
-per-channel features, followed by a position-wise feed-forward block
+\cite{itransformer,smamba,crossformer}. Inside each branch, before its
+head, we optionally run $M$ layers of \emph{bidirectional} Mamba over the
+$C$ per-channel features, followed by a position-wise feed-forward block
 (Fig.~\ref{fig:blocks}b). Bidirectionality is essential: channel order
 carries no causal direction, so each layer sums a forward and a reversed
-scan in one residual stream. The mixer is a per-dataset choice: $M{=}2$ at
-width 512 on electricity/traffic (its single most load-bearing component;
-Sect.~\ref{sec:ablation}), $M{=}2$ at width 256 on weather, $M{=}1$ on
-solar, and $M{=}0$ on the few-channel ETT and exchange datasets, where it
-triples parameters without adding signal.
+scan in one residual stream. Whether such mixing \emph{should} pay is a
+property of the data: the mean absolute pairwise Pearson correlation (PCC)
+between channels on the training split spans $0.31$--$0.35$ on the
+weakly coupled ETT family but $0.50$--$0.91$ on Electricity, Traffic, and
+Solar (Table~\ref{tab:datasets}). We therefore expose the mixer as a
+per-dataset switch --- on for strongly coupled, many-channel benchmarks,
+off for weakly coupled, few-channel ones (per-dataset settings in
+Sect.~\ref{sec:setup}) --- and test the decision in both directions in
+Sect.~\ref{sec:ablation}.
 
 \subsection{Forecast-Level Convex Fusion}
 \label{sec:fusion}
@@ -520,9 +526,10 @@ for its contribution, not a causal attribution. The constraint is
 structural, not behavioral: $g$ is a sigmoid and can saturate near 0 or 1,
 so one branch may contribute very little --- by design, as the ablations
 show the useful domain is dataset-dependent. $\psi$ is zero-initialized
-with bias $2.2$, so training starts at $g \approx 0.9$: the time branch is
-linear at initialization while the frequency branch is silent. An even
-$0.5/0.5$ mix would therefore halve the initial linear forecast. This is an
+with its bias set so that training starts gate-open toward the time branch
+($g_0 \approx 0.9$; exact value in Sect.~\ref{sec:setup}): the time branch
+is linear at initialization while the frequency branch is silent, and an
+even initial mix would halve the initial linear forecast. This is an
 initialization convention; empirical gate distributions are not available in
 the present study.
 
@@ -548,19 +555,22 @@ metrics are MSE and MAE.
 
 \begin{table}[tb]
 \centering
-\caption{Benchmark datasets and where \model{} places its capacity.}
+\caption{Benchmark datasets, their cross-channel coupling, and where
+\model{} places its capacity. $\overline{|r|}$: mean absolute pairwise
+Pearson correlation between channels on the training split (--- = raw file
+unavailable in our anonymized build environment).}
 \label{tab:datasets}
-\begin{tabular}{@{}lrrlll@{}}
+\begin{tabular}{@{}lrrlcll@{}}
 \toprule
-Dataset & Variates & Steps & Granularity & Variate mixer & Params \\
+Dataset & Variates & Steps & Granularity & $\overline{|r|}$ & Variate mixer & Params \\
 \midrule
-ETTh1/ETTh2 & 7 & 17{,}420 & 1 hour & off & 0.25M \\
-ETTm1/ETTm2 & 7 & 69{,}680 & 15 min & off & 0.24--0.36M \\
-Weather & 21 & 52{,}696 & 10 min & $M{=}2$, $d{=}256$ & 5.8M \\
-Solar-Energy & 137 & 52{,}560 & 10 min & $M{=}1$, $d{=}128$ & 0.96M \\
-Electricity & 321 & 26{,}304 & 1 hour & $M{=}2$, $d{=}512$ & 19.7M \\
-Traffic & 862 & 17{,}544 & 1 hour & $M{=}2$, $d{=}512$ & 19.7M \\
-Exchange & 8 & 7{,}588 & 1 day & off & 0.09M \\
+ETTh1/ETTh2 & 7 & 17{,}420 & 1 hour & 0.31/0.35 & off & 0.25M \\
+ETTm1/ETTm2 & 7 & 69{,}680 & 15 min & 0.31/0.35 & off & 0.24--0.36M \\
+Weather & 21 & 52{,}696 & 10 min & --- & $M{=}2$, $d{=}256$ & 5.8M \\
+Solar-Energy & 137 & 52{,}560 & 10 min & 0.91 & $M{=}1$, $d{=}128$ & 0.96M \\
+Electricity & 321 & 26{,}304 & 1 hour & 0.50 & $M{=}2$, $d{=}512$ & 19.7M \\
+Traffic & 862 & 17{,}544 & 1 hour & 0.58 & $M{=}2$, $d{=}512$ & 19.7M \\
+Exchange & 8 & 7{,}588 & 1 day & 0.48 & off & 0.09M \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -580,9 +590,11 @@ is planned for the camera-ready appendix.
 All experiments use PyTorch 2.11 (CUDA 13.0) on a single NVIDIA RTX 5090.
 Optimization is AdamW (grad clip $5.0$), 10 epochs with the learning rate
 halved each epoch, early stopping on validation loss, and mixed precision
-with the selective scan forced to fp32 (Sect.~\ref{sec:anchors}). The
-decomposition kernel is 25; Mamba blocks use expansion 2 and conv width 4
-throughout. Table~\ref{tab:hparams} lists all per-dataset settings; configs
+with the selective-scan recurrence kept in full precision for numerical
+stability of the $L$-step state accumulation. The decomposition kernel is
+25; Mamba blocks use expansion 2 and conv width 4 throughout; the fusion
+gate's bias is initialized to $2.2$, giving $g_0 = \sigma(2.2) \approx 0.9$
+(Sect.~\ref{sec:fusion}). Table~\ref{tab:hparams} lists all per-dataset settings; configs
 and the ablation harness ship with the code. All main results are means
 over \emph{three seeds} (2024--2026); the maximum per-entry std across the
 36 dataset--horizon entries is $0.005$ MSE, typically $0.001$--$0.003$.
@@ -888,6 +900,24 @@ branch's contribution fades beyond $H{=}96$. On ETTh1, ETTh2, and Weather
 convex gate makes carrying the unused path harmless. Which domain a
 dataset needs --- and for how far ahead --- is itself dataset-dependent:
 the dual-domain analogue of the capacity-placement finding.
+
+\paragraph{Data correlations predict --- and mislead about --- the mixer.}
+A data-mining reading of the placement finding asks \emph{which measurable
+property of a dataset} decides whether cross-variate capacity pays. Mean
+absolute cross-channel PCC (Table~\ref{tab:datasets}) separates the two
+regimes almost perfectly: the mixer-off ETT family sits at
+$\overline{|r|}\,{=}\,0.31$--$0.35$ (only $14$--$24\%$ of channel pairs
+exceed $|r|{>}0.6$), while the mixer-on Electricity, Traffic, and Solar
+span $0.50$--$0.91$ (Solar's near-total $0.91$ reflects neighboring plants
+sharing irradiance), matching where the paired ablations find the mixer
+load-bearing versus harmful. Exchange is the instructive exception:
+$\overline{|r|}\,{=}\,0.48$, yet the mixer is disabled --- its currency
+series are near random walks whose correlation is co-trending rather than
+exploitable cross-sectional signal, and with only $7.6$K steps the mixer's
+parameters cannot be estimated reliably. Raw correlation is therefore a
+useful \emph{screen}, not a decision rule: high PCC flags candidates for
+cross-variate capacity, but non-stationarity and sample size can inflate
+it, and the seed-paired ablation remains the arbiter.
 
 \paragraph{Complexity accounting.} Table~\ref{tab:efficiency} reports
 model-only, hardware-independent estimates rather than comparative runtime
