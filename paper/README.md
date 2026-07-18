@@ -33,21 +33,20 @@
 ## Branch-ablation matrix (run — now in the paper)
 
 The resolving experiment for the frequency-branch question has been run on
-the RTX 5090 and is Table 6 of the paper: full / time-only / freq-only on
-all nine datasets at H=96 plus an ETTh1 horizon sweep (192/336/720), three
-paired seeds (`results/Branch_matrix.json`, produced by
-`scripts/run_branch_matrix.py`). Findings: frequency branch individually
-significant on Solar/ETTm1/Electricity/Exchange; both branches jointly
-necessary on ETTm1/Electricity/Exchange; branches redundant on
-ETTh1 (all horizons)/ETTh2/Weather/Traffic. Every full-model mean
-reproduces the main table, and the Solar cell replicates the earlier
-ablation (+0.0126 vs +0.0114, overlapping CIs). To extend:
-
-```bash
-python scripts/run_branch_matrix.py --horizons 96 192 336 720   # full 36-cell matrix
-```
-
-(resumable; per-cell checkpointing to `checkpoints/branch_matrix.json`).
+the RTX 5090 and is Table 6 of the paper: full / time-only / freq-only,
+three paired seeds, on all nine datasets at H=96 AND across all four
+horizons (96/192/336/720) on ETTh1/ETTh2/ETTm1/ETTm2/Weather/Solar — 27
+cells total (`results/Branch_matrix.json`, produced by
+`scripts/run_branch_matrix.py`). Findings: frequency branch significant in
+5/27 cells, concentrated at H=96 (Solar/ETTm1/Electricity/Exchange, plus
+ETTm2@336) and NOT persisting to longer horizons on Solar; time branch
+significant in 9/27 cells, including ETTm1 at every horizon; no branch
+effect on ETTh1/ETTh2/Weather at any horizon or Traffic@96. Every
+full-model mean reproduces the per-horizon main table, and the Solar@96
+cell replicates the earlier ablation (+0.0126 vs +0.0114, overlapping
+CIs). Remaining gap: Electricity/Traffic/Exchange at H=192/336/720
+(resumable: `python scripts/run_branch_matrix.py --datasets electricity
+traffic exchange_rate --horizons 192 336 720`).
 
 ## Compiling
 
@@ -85,8 +84,8 @@ pdflatex main.tex && pdflatex main.tex
   t=4.303) computed from the per-run values; * marks CIs excluding 0.
   The traffic RevIN probe and the traffic 4-layer-mixer negative result
   discussed in Sect. 4.3 are single-run probes.
-- **Branch matrix** (Table 6): `results/Branch_matrix.json` — 9 datasets at
-  H=96 + ETTh1 horizon sweep, 3 paired seeds, from
+- **Branch matrix** (Table 6): `results/Branch_matrix.json` — 27 cells (9
+  datasets at H=96; 6 datasets across all 4 horizons), 3 paired seeds, from
   `scripts/run_branch_matrix.py` (RTX 5090).
 - **Table 8** (complexity profile): params and MACs/forecast are
   hardware-independent; **peak GPU memory and throughput are measured on the
