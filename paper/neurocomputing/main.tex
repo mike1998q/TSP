@@ -140,9 +140,22 @@ forecasts, supported by a 27-cell branch-ablation matrix that maps where
 \textbf{(4)}~three-seed results on nine benchmarks plus paired ablations,
 including statistically supported negative and dataset-dependent findings.
 
-\section{Related Work}
+\noindent\textbf{Organization.} Section~\ref{sec:related} reviews time
+series analysis tasks, deep models for temporal and for cross-dimensional
+dependencies, and the resulting research gap. Section~\ref{sec:prelim} formalizes
+the forecasting problem and reviews the state-space background \model{}
+builds on. Section~\ref{sec:method} details the dual-domain architecture,
+its zero-initialized corrections, and the switchable variate mixer.
+Section~\ref{sec:experiments} reports the main comparison, paired
+ablations, and the branch-ablation matrix; Section~\ref{sec:discussion}
+distills practical component-selection guidance and threats to validity;
+and Section~\ref{sec:conclusion} concludes.
 
-\paragraph{Time series analysis problems.} Deep models now serve the full
+\section{Related Work}
+\label{sec:related}
+
+\subsection{Time Series Analysis Tasks}
+Deep models now serve the full
 spectrum of time series mining tasks --- forecasting, classification,
 anomaly detection, and imputation --- often through shared general-purpose
 backbones such as TimesNet \cite{timesnet}, whose representations transfer
@@ -153,7 +166,8 @@ make it the natural arena for controlled architectural evidence, and
 findings about which structures a dataset rewards typically carry over to
 the sibling tasks that reuse forecasting backbones.
 
-\paragraph{Temporal-dependency models.} One line models dependencies along
+\subsection{Temporal-Dependency Models}
+One line models dependencies along
 the time axis only. Transformer variants adapt attention to long sequences
 via sparsity, decomposition, and frequency enhancement
 \cite{informer,autoformer,fedformer}, patching \cite{patchtst}, or explicit
@@ -171,8 +185,8 @@ explicit; RevIN, used here as a per-dataset switch, normalizes windows
 reversibly but neither extracts nor forecasts dispersion, and we claim no
 STD-style decomposition.
 
-\paragraph{Cross-dimensional (spatial--temporal) models.} A second line
-treats the variate dimension as a first-class axis. Crossformer
+\subsection{Cross-Dimensional (Spatial--Temporal) Models}
+A second line treats the variate dimension as a first-class axis. Crossformer
 \cite{crossformer} is the classic Transformer of this type: it embeds the
 series into a two-dimensional patch grid and attends over \emph{both} the
 temporal and the cross-variate (spatial) dimension. iTransformer
@@ -187,8 +201,8 @@ time, bidirectional Mamba over variates and frequency bins --- but treats
 the spatial dimension as a \emph{switchable} module rather than a fixed
 design commitment.
 
-\paragraph{Research gap.} Across both lines, three commitments are usually
-hard-wired. (i)~Each model adopts one representation --- time steps
+\subsection{Research Gap}
+Across both lines, three commitments are usually hard-wired. (i)~Each model adopts one representation --- time steps
 \emph{or} spectra --- so the other view's contribution is never separately
 testable. (ii)~Cross-dimensional models such as Crossformer apply the same
 spatial--temporal capacity to every dataset, although channel coupling
@@ -205,6 +219,61 @@ corrections in the spirit of ReZero \cite{rezero} (retained here as an
 interpretable initialization convention, shown accuracy-neutral), and a
 27-cell branch-ablation matrix connecting data characteristics to component
 value.
+
+\section{Preliminaries}
+\label{sec:prelim}
+
+\subsection{Problem Formulation}
+\label{sec:problem}
+
+Given a look-back window $\mathbf{X} \in \mathbb{R}^{L \times C}$ of $L$
+steps and $C$ variates, long-term multivariate forecasting predicts the
+next $H$ steps $\mathbf{Y} \in \mathbb{R}^{H \times C}$, with $H$ typically
+in $\{96,192,336,720\}$. Following RevIN \cite{revin}, we standardize each
+window per variate, $\tilde{\mathbf{X}} = (\mathbf{X} - \boldsymbol{\mu}) /
+\boldsymbol{\sigma}$, using the window's own per-variate mean
+$\boldsymbol{\mu}$ and standard deviation $\boldsymbol{\sigma}$, and
+de-normalize the final forecast by the inverse affine map. Instance
+normalization is treated as a per-dataset switch rather than a universal
+default; Section~\ref{sec:ablation} shows why. A model is a map
+$f_\theta:\tilde{\mathbf{X}}\mapsto\mathbf{Y}$ trained to minimize the mean
+squared error over the horizon.
+
+\subsection{State Space Models}
+\label{sec:ssm-background}
+
+A continuous linear state-space model maps an input signal $u(t)\in\mathbb{R}$
+to an output $y(t)\in\mathbb{R}$ through an $N$-dimensional latent state
+$\mathbf{h}(t)\in\mathbb{R}^{N}$,
+\begin{equation}
+\mathbf{h}'(t) = \mathbf{A}\,\mathbf{h}(t) + \mathbf{B}\,u(t), \qquad
+y(t) = \mathbf{C}^{\top}\mathbf{h}(t),
+\label{eq:cont-ssm}
+\end{equation}
+with $\mathbf{A}\in\mathbb{R}^{N\times N}$, $\mathbf{B},\mathbf{C}\in\mathbb{R}^{N}$.
+To operate on a discrete sequence, the system is discretized with a step
+size $\boldsymbol{\Delta}$ under a zero-order hold, which yields the
+discrete parameters
+\begin{equation}
+\bar{\mathbf{A}} = \exp(\boldsymbol{\Delta}\mathbf{A}), \qquad
+\bar{\mathbf{B}} = (\boldsymbol{\Delta}\mathbf{A})^{-1}
+(\exp(\boldsymbol{\Delta}\mathbf{A}) - \mathbf{I})\,\boldsymbol{\Delta}\mathbf{B}
+\;\approx\; \boldsymbol{\Delta}\mathbf{B},
+\label{eq:zoh}
+\end{equation}
+and turns Eq.~\eqref{eq:cont-ssm} into the linear recurrence
+$\mathbf{h}_k = \bar{\mathbf{A}}\,\mathbf{h}_{k-1} + \bar{\mathbf{B}}\,u_k$,
+$y_k = \mathbf{C}^{\top}\mathbf{h}_k$. Classical structured SSMs keep
+$(\bar{\mathbf{A}},\bar{\mathbf{B}},\mathbf{C})$ fixed across the sequence,
+so the recurrence is linear time-invariant and can be evaluated as a global
+convolution. Mamba \cite{mamba} makes the model \emph{selective}: the
+parameters $(\boldsymbol{\Delta}_k,\mathbf{B}_k,\mathbf{C}_k)$ become
+functions of the input $u_k$, so the state transition adapts at each step
+and the model can selectively remember or forget context. Selectivity
+breaks the convolutional form, but a hardware-aware parallel scan keeps the
+cost linear in sequence length. \model{} uses this selective recurrence in
+two roles --- a causal scan over time and, optionally, a bidirectional scan
+over variates --- detailed next.
 
 \section{Method}
 \label{sec:method}
@@ -308,16 +377,6 @@ $\mathbf{Y}_{\mathrm{time}}$ and $\mathbf{Y}_{\mathrm{freq}}$.}
 \end{figure}
 
 
-\subsection{Problem Formulation and Normalization}
-
-Given a look-back window $\mathbf{X} \in \mathbb{R}^{L \times C}$ of $L$
-steps and $C$ variates, the task is to predict the next $H$ steps
-$\mathbf{Y} \in \mathbb{R}^{H \times C}$. Following RevIN \cite{revin}, we
-standardize each window per variate, $\tilde{\mathbf{X}} = (\mathbf{X} -
-\boldsymbol{\mu}) / \boldsymbol{\sigma}$, and de-normalize the final
-forecast. Instance normalization is treated as a per-dataset switch rather
-than a universal default; Section~\ref{sec:ablation} shows why.
-
 \subsection{Time Branch: Decomposition, Linear Backbone, Selective Scan}
 \label{sec:anchors}
 
@@ -338,9 +397,9 @@ shared across variates.
 
 \emph{Selective-scan correction.} The pair $[\mathbf{X}_s; \mathbf{X}_t]$
 is embedded per time step and processed channel-independently by a stack
-of Mamba layers \cite{mamba} (Fig.~\ref{fig:blocks}a). Following the
-zero-order-hold discretization of \cite{mamba}, the continuous parameters
-$(\boldsymbol{\Delta}, \mathbf{A}, \mathbf{B})$ become
+of Mamba layers \cite{mamba} (Fig.~\ref{fig:blocks}a). Instantiating the
+selective recurrence of Section~\ref{sec:ssm-background}, the per-step
+discrete parameters are
 $\bar{\mathbf{A}}_k = \exp(\boldsymbol{\Delta}_k \mathbf{A})$ and
 $\bar{\mathbf{B}}_k = \boldsymbol{\Delta}_k \mathbf{B}_k$, and the layer
 runs the recurrence
@@ -541,7 +600,8 @@ schedule sensitivity therefore remains a potential confound.
 \subsection{Setup}
 \label{sec:setup}
 
-\paragraph{Datasets and protocol.} We evaluate on nine standard benchmarks
+\subsubsection{Datasets and Protocol}
+We evaluate on nine standard benchmarks
 (Table~\ref{tab:datasets}) under the unified protocol of
 \cite{itransformer,smamba}: look-back 96, horizons 96/192/336/720. ETT
 uses the canonical 12/4/4-month border split, the others chronological
@@ -571,7 +631,8 @@ Exchange & 8 & 7{,}588 & 1 day & 0.48 & off & 0.09M \\
 \end{tabular}}
 \end{table}
 
-\paragraph{Baselines.} We compare against the strongest published results
+\subsubsection{Baselines}
+We compare against the strongest published results
 under this protocol: S-Mamba \cite{smamba}, iTransformer \cite{itransformer},
 PatchTST \cite{patchtst}, DLinear \cite{dlinear}, and TimesNet
 \cite{timesnet}. Numbers are quoted from \cite{smamba} rather than
@@ -599,7 +660,8 @@ capacity-selection rule: no common pre-registered search space or equalized
 tuning budget was used across all datasets. Consequently, capacity placement
 is reported as an empirical finding, and new datasets require
 validation-only selection of these switches.
-\paragraph{Statistical methodology.} We compare at two levels.
+\subsubsection{Statistical Methodology}
+We compare at two levels.
 \emph{Within our framework} (ablations), every variant shares seeds with
 the reference, so we report \emph{paired} per-seed differences with
 $t$-based 95\% CIs ($n{=}3$) and treat a component as supported only when
