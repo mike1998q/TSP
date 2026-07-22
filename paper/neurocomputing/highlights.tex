@@ -5,10 +5,10 @@
 \begin{document}
 \section*{Highlights}
 \begin{itemize}
-\item A dual-domain Mamba forecaster with separately testable time and frequency paths
+\item A forecast-decomposable framework makes time, frequency, and mixer parts removable
 \item Zero-initialized corrections make the initial forecast an interpretable linear map
-\item A 27-cell branch-ablation matrix maps component value by dataset and horizon
+\item 83 seed-paired ablations with Benjamini-Hochberg control separate signal from noise
+\item Time branch is confirmed on ETTm data; frequency branch only on Solar at H=96
 \item Channel-correlation (PCC) analysis grounds per-dataset cross-variate mixing
-\item Lowest reported average MSE on seven of nine look-back-96 benchmarks
 \end{itemize}
 \end{document}

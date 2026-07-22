@@ -103,8 +103,8 @@ standard long-term forecasting benchmarks:
 
 | Dataset | Config | Channels | Freq | Rows | Split | Batch | LR | Notes |
 |---|---|---|---|---|---|---|---|---|
-| ETTh1 | `configs/ETTh1.yaml` | 7 | 1 h | 17,420 | canonical 12/4/4 mo | 32 | 1e-4 | halve LR, 1 Mamba layer, dropout 0.2, mixer off |
-| ETTh2 | `configs/ETTh2.yaml` | 7 | 1 h | 17,420 | canonical 12/4/4 mo | 32 | 1e-4 | halve LR, 1 Mamba layer, dropout 0.3, low-pass 0.3, mixer off |
+| ETTh1 | `configs/ETTh1.yaml` | 7 | 1 h | 17,420 | canonical 12/4/4 mo | 32 | 5e-4 | halve LR, 1 Mamba layer, dropout 0.2, mixer off |
+| ETTh2 | `configs/ETTh2.yaml` | 7 | 1 h | 17,420 | canonical 12/4/4 mo | 32 | 5e-4 | halve LR, 1 Mamba layer, dropout 0.3, low-pass 0.3, mixer off |
 | ETTm1 | `configs/ETTm1.yaml` | 7 | 15 min | 69,680 | canonical 12/4/4 mo | 32 | 1e-4 | halve LR, mixer off |
 | ETTm2 | `configs/ETTm2.yaml` | 7 | 15 min | 69,680 | canonical 12/4/4 mo | 32 | 1e-4 | halve LR, dropout 0.2, low-pass 0.2, mixer off |
 | Weather | `configs/weather.yaml` | 21 | 10 min | 52,696 | 0.7/0.1/0.2 | 32 | 2e-4 | halve LR, d_model 256, Mamba time encoder + 2 variate-Mamba layers, FITS (~5.8M params) |
@@ -263,7 +263,11 @@ python -m src.train --time_encoder mlp
 ## Metrics
 
 `src/utils/metrics.py` reports **MSE** and **MAE** on the held-out
-chronological test split (also used for validation/early stopping).
+chronological **test** split. Early stopping and checkpoint selection use a
+**separate validation** split (`val_ratio`; for ETT the canonical 12/4/4-month
+train/val/test borders), never the test split — see `src/train.py`
+(`val_loader` drives early stopping at lines 163/179; `test_loader` is used
+only for the final evaluation of the selected checkpoint).
 
 ## Results
 
