@@ -189,16 +189,16 @@ def build_model(cfg: dict, n_channels: int):
     mcfg = cfg["model"]
     dcfg = cfg["data"]
     arch = mcfg.get("arch", "dual_domain")
-    if arch == "dlinear":
-        from .baselines import DLinearBaseline
-
-        return DLinearBaseline(
-            seq_len=dcfg["seq_len"],
-            pred_len=dcfg["pred_len"],
-            kernel_size=mcfg.get("time_kernel_size", 25),
-        )
     if arch != "dual_domain":
-        raise ValueError(f"Unknown model.arch: {arch!r}")
+        from .baselines import BASELINE_ARCHS, build_baseline
+
+        model = build_baseline(arch, cfg, n_channels)
+        if model is not None:
+            return model
+        raise ValueError(
+            f"Unknown model.arch: {arch!r} "
+            f"(expected 'dual_domain' or one of {BASELINE_ARCHS})"
+        )
     return DualDomainForecaster(
         seq_len=dcfg["seq_len"],
         pred_len=dcfg["pred_len"],

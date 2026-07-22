@@ -127,10 +127,29 @@ def load_raw_series(
     synthetic_length: int,
     synthetic_channels: int,
     seed: int,
+    npz_key: str = "data",
+    npz_feature: int = 0,
 ) -> np.ndarray:
-    """Load the full (time, channels) array from synthetic or CSV source."""
+    """Load the full (time, channels) array from synthetic, CSV, or NPZ source.
+
+    ``npz`` covers the PEMS traffic-flow benchmark files (PEMS03/04/07/08),
+    which store a ``(T, N, F)`` array under ``npz_key`` (default ``"data"``);
+    feature ``npz_feature`` (default 0, traffic flow) is taken across the
+    ``N`` sensor channels, giving a ``(T, N)`` multivariate series.
+    """
     if source == "synthetic":
         return generate_synthetic(synthetic_length, synthetic_channels, seed=seed)
+    if source == "npz":
+        if not csv_path:
+            raise ValueError("data.csv_path must point at the .npz when source == 'npz'.")
+        with np.load(csv_path) as npz:
+            arr = npz[npz_key] if npz_key in npz else npz[list(npz.files)[0]]
+        arr = np.asarray(arr, dtype=np.float32)
+        if arr.ndim == 3:            # (T, N, F) -> select one feature -> (T, N)
+            arr = arr[:, :, npz_feature]
+        elif arr.ndim != 2:
+            raise ValueError(f"Unexpected NPZ array shape {arr.shape} in {csv_path!r}")
+        return arr
     if source == "csv":
         if not csv_path:
             raise ValueError("data.csv_path must be set when source == 'csv'.")

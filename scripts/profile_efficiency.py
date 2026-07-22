@@ -166,6 +166,12 @@ def profile_dispersion_overhead(path, n_channels, device=None, batch=1, iters=50
             profile(disp_cfg, n_channels, device, batch, iters))
 
 
+#: channel counts for the standard configs (for the matched-arch mode).
+CH_BY_PATH = {path: ch for _, path, ch in CONFIGS}
+CH_BY_PATH.update({"configs/PEMS03.yaml": 358, "configs/PEMS04.yaml": 307,
+                   "configs/PEMS07.yaml": 883, "configs/PEMS08.yaml": 170})
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dispersion", action="store_true",
@@ -174,12 +180,49 @@ def main():
     ap.add_argument("--batch", type=int, default=32,
                     help="batch size for timing/peak-memory (default 32)")
     ap.add_argument("--iters", type=int, default=50)
+    ap.add_argument("--archs", nargs="*", default=None,
+                    help="matched-efficiency mode: profile these archs on one "
+                         "--config (e.g. dual_domain smamba itransformer patchtst).")
+    ap.add_argument("--config", default=None,
+                    help="dataset config for --archs mode")
+    ap.add_argument("--channels", type=int, default=None,
+                    help="variate count for --archs mode (inferred for known configs)")
+    ap.add_argument("--pred_len", type=int, default=96)
     args = ap.parse_args()
 
     device = pick_device(args.device)
     print(f"[device] {device}"
           + (f" ({torch.cuda.get_device_name(device)})" if device.type == "cuda" else "")
           + f" | batch={args.batch}")
+
+    if args.archs:
+        if not args.config:
+            raise SystemExit("--archs requires --config")
+        ch = args.channels or CH_BY_PATH.get(args.config)
+        if ch is None:
+            raise SystemExit(f"Unknown channel count for {args.config}; pass --channels")
+        base = load_config(args.config)
+        base["data"]["pred_len"] = args.pred_len
+        print(f"\nMatched efficiency on {args.config} (C={ch}, H={args.pred_len}):")
+        rows = []
+        for arch in args.archs:
+            cfg = load_config(args.config)
+            cfg["data"]["pred_len"] = args.pred_len
+            cfg["model"]["arch"] = arch
+            try:
+                r = profile(cfg, ch, device, args.batch, args.iters)
+            except NotImplementedError as e:
+                print(f"{arch:12s} skipped: {e}")
+                continue
+            rows.append((arch, r))
+            print(f"{arch:12s} params={r['params_m']:7.3f}M  MACs={r['macs_m']:8.1f}M  "
+                  f"peakmem={r['peak_mb']:7.1f}MB  lat={r['lat_ms']:7.2f}ms  "
+                  f"thru={r['thru']:8.0f}/s")
+        print("\n% LaTeX rows (arch & params(M) & MACs(M) & peakmem(MB) & lat(ms) & thru):")
+        for arch, r in rows:
+            print(f"{arch} & {r['params_m']:.2f} & {r['macs_m']:.0f} & "
+                  f"{r['peak_mb']:.0f} & {r['lat_ms']:.1f} & {r['thru']:.0f} \\\\")
+        return
 
     if args.dispersion:
         print(f"\n{'dataset':12s} {'C':>4s} {'+head params':>12s} {'overhead':>8s} "

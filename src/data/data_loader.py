@@ -27,6 +27,8 @@ def get_dataloaders(
         synthetic_length=dcfg.get("synthetic_length", 8000),
         synthetic_channels=dcfg.get("synthetic_channels", 7),
         seed=cfg["experiment"]["seed"],
+        npz_key=dcfg.get("npz_key", "data"),
+        npz_feature=dcfg.get("npz_feature", 0),
     )
     n_channels = data.shape[1]
 

@@ -470,3 +470,92 @@ def test_zero_init_switch():
         _, c1 = rand(x, return_components=True)
     assert c0["freq"].abs().max() < 1e-6
     assert c1["freq"].abs().max() > 1e-3
+
+
+# ---------------------------------------------------------------------------
+# Revision scaffolding (review items 2, 3, 6)
+# ---------------------------------------------------------------------------
+
+def test_unified_baselines_shapes_and_registry():
+    """Every in-repo baseline builds via model.arch and forecasts (B,H,C)."""
+    from src.models import build_model
+    from src.models.baselines import BASELINE_ARCHS
+
+    b, l, h, c = 2, 96, 48, 7
+    x = torch.randn(b, l, c)
+    native = [a for a in BASELINE_ARCHS if a != "tf4tf"]
+    assert set(native) >= {"nlinear", "rlinear", "patchtst", "itransformer",
+                           "smamba", "msmamba"}
+    for arch in native:
+        cfg = {"model": {"arch": arch}, "data": {"seq_len": l, "pred_len": h}}
+        m = build_model(cfg, c).eval()
+        with torch.no_grad():
+            out = m(x)
+        assert out.shape == (b, h, c), arch
+
+
+def test_rlinear_revin_invertibility():
+    """RLinear's reversible norm must return to data scale (denorm inverts)."""
+    from src.models.baselines import _InstanceNorm
+
+    x = torch.randn(3, 96, 5) * 4 + 7
+    norm = _InstanceNorm(n_channels=5, affine=True).eval()
+    z = norm.normalize(x)
+    # feed the normalized look-back's tail back through denormalize
+    recon = norm.denormalize(z)
+    assert torch.allclose(recon, x, atol=1e-4)
+
+
+def test_tf4tf_adapter_requires_external_impl():
+    """tf4tf must never fabricate a model: it raises without external_impl."""
+    from src.models import build_model
+    cfg = {"model": {"arch": "tf4tf"}, "data": {"seq_len": 96, "pred_len": 96}}
+    with pytest.raises(NotImplementedError):
+        build_model(cfg, 7)
+
+
+def test_npz_pems_loader(tmp_path):
+    """PEMS .npz (T,N,F) loads to (T,N) selecting the flow feature."""
+    from src.data.dataset import load_raw_series
+
+    p = tmp_path / "PEMS08.npz"
+    np.savez(p, data=np.random.randn(200, 12, 3).astype("float32"))
+    arr = load_raw_series(source="npz", csv_path=str(p), target_columns=None,
+                          synthetic_length=0, synthetic_channels=0, seed=0,
+                          npz_feature=0)
+    assert arr.shape == (200, 12)
+    assert arr.dtype == np.float32
+
+
+def test_selection_protocol_helpers():
+    """set_by_path / parse_value / apply_candidate build correct candidate cfgs."""
+    from scripts.run_selection_protocol import (
+        apply_candidate, parse_value, set_by_path,
+    )
+
+    assert parse_value("true") is True and parse_value("false") is False
+    assert parse_value("3") == 3 and isinstance(parse_value("3"), int)
+    assert parse_value("0.5") == 0.5
+    assert parse_value("mamba") == "mamba"
+
+    cfg = {"model": {"use_revin": True}, "data": {"seq_len": 96}}
+    out = apply_candidate(cfg, {"model.use_revin": False,
+                                "model.channel_mixer_layers": 2})
+    assert out["model"]["use_revin"] is False
+    assert out["model"]["channel_mixer_layers"] == 2
+    assert cfg["model"]["use_revin"] is True  # original untouched
+
+    bare = {"model": {}}
+    set_by_path(bare, "use_revin", False)  # bare key defaults to model section
+    assert bare["model"]["use_revin"] is False
+
+
+def test_bh_correction_monotone_and_bounds():
+    """Benjamini-Hochberg q-values are within [0,1] and >= raw p-values."""
+    from scripts.compute_stats_correction import benjamini_hochberg
+
+    ps = [0.001, 0.02, 0.03, 0.2, 0.5, 0.9]
+    qs = benjamini_hochberg(ps)
+    assert len(qs) == len(ps)
+    assert all(0.0 <= q <= 1.0 for q in qs)
+    assert all(q >= p - 1e-9 for p, q in zip(ps, qs))  # correction only inflates
