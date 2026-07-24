@@ -61,6 +61,7 @@ class DualDomainForecaster(nn.Module):
         fusion: str = "gated",
         head_dropout: float = 0.1,
         channel_mixer_layers: int = 1,
+        mixer_placement: str = "both",
         use_revin: bool = True,
         time_linear_backbone: bool = True,
         zero_init: bool = True,
@@ -75,6 +76,24 @@ class DualDomainForecaster(nn.Module):
         self.n_channels = n_channels
         self.dispersion = dispersion
 
+        # Cross-variate mixer placement. The mixer is the dominant parameter
+        # cost on high-channel datasets (it scales with d_model^2 and is
+        # otherwise instantiated in *both* branches), so this switch controls
+        # where it lives:
+        #   'both'   -- independent mixer in each branch (default; unchanged).
+        #   'time'   -- mixer only in the time branch (freq branch has none).
+        #   'freq'   -- mixer only in the frequency branch.
+        #   'shared' -- one mixer, weight-tied across both branches (both
+        #               branches still mix, at ~half the mixer parameters).
+        if mixer_placement not in ("both", "time", "freq", "shared"):
+            raise ValueError(
+                f"Unknown mixer_placement: {mixer_placement!r} "
+                "(use both, time, freq, shared)"
+            )
+        self.mixer_placement = mixer_placement
+        time_mix = channel_mixer_layers if mixer_placement != "freq" else 0
+        freq_mix = channel_mixer_layers if mixer_placement != "time" else 0
+
         self.time_branch = TimeBranch(
             seq_len=seq_len,
             pred_len=pred_len,
@@ -88,7 +107,7 @@ class DualDomainForecaster(nn.Module):
             mamba_d_conv=mamba_d_conv,
             mamba_expand=mamba_expand,
             use_official_mamba=use_official_mamba,
-            channel_mixer_layers=channel_mixer_layers,
+            channel_mixer_layers=time_mix,
             use_linear_backbone=time_linear_backbone,
             zero_init=zero_init,
         )
@@ -107,9 +126,13 @@ class DualDomainForecaster(nn.Module):
             mamba_d_conv=mamba_d_conv,
             mamba_expand=mamba_expand,
             use_official_mamba=use_official_mamba,
-            channel_mixer_layers=channel_mixer_layers,
+            channel_mixer_layers=freq_mix,
             zero_init=zero_init,
         )
+        # Weight-tie the two mixers when sharing (both branches were built with
+        # a mixer; point the frequency branch at the time branch's instance).
+        if mixer_placement == "shared" and channel_mixer_layers > 0:
+            self.freq_branch.channel_mixer = self.time_branch.channel_mixer
         self.fusion = ForecastFusion(d_model=d_model, pred_len=pred_len,
                                      mode=fusion, zero_init=zero_init)
 
@@ -220,6 +243,7 @@ def build_model(cfg: dict, n_channels: int):
         fusion=mcfg["fusion"],
         head_dropout=mcfg["head_dropout"],
         channel_mixer_layers=mcfg.get("channel_mixer_layers", 1),
+        mixer_placement=mcfg.get("mixer_placement", "both"),
         use_revin=mcfg.get("use_revin", True),
         time_linear_backbone=mcfg.get("time_linear_backbone", True),
         zero_init=mcfg.get("zero_init", True),

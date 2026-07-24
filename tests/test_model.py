@@ -559,3 +559,36 @@ def test_bh_correction_monotone_and_bounds():
     assert len(qs) == len(ps)
     assert all(0.0 <= q <= 1.0 for q in qs)
     assert all(q >= p - 1e-9 for p, q in zip(ps, qs))  # correction only inflates
+
+
+def test_mixer_placement_switch_reduces_params_and_ties():
+    """mixer_placement controls where the variate mixer lives; 'shared' ties
+    one mixer across branches (fewer params), 'time'/'freq' use one branch."""
+    b, l, h, c = 2, 96, 48, 24
+    x = torch.randn(b, l, c)
+
+    def build(placement):
+        return DualDomainForecaster(
+            seq_len=l, pred_len=h, n_channels=c, d_model=64,
+            channel_mixer_layers=2, mixer_placement=placement)
+
+    both = build("both").eval()
+    shared = build("shared").eval()
+    time_only = build("time").eval()
+    n = lambda m: sum(p.numel() for p in m.parameters())
+
+    # shared and single-branch both drop one mixer's worth of parameters
+    assert n(shared) < n(both)
+    assert n(time_only) < n(both)
+    # sharing ties the two branches' mixers to the same module
+    assert shared.freq_branch.channel_mixer is shared.time_branch.channel_mixer
+    # 'time' placement leaves the frequency branch without a mixer
+    assert time_only.freq_branch.channel_mixer is None
+    # all still forecast the right shape
+    with torch.no_grad():
+        for m in (both, shared, time_only):
+            assert m(x).shape == (b, h, c)
+
+    import pytest as _pytest
+    with _pytest.raises(ValueError):
+        build("nonsense")

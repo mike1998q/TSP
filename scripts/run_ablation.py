@@ -61,6 +61,10 @@ VARIANTS = {
                          {("model", "channel_mixer_layers"): 0}),
     "with_channel_mixer": ("add 1 layer of cross-channel Mamba mixing",
                            {("model", "channel_mixer_layers"): 1}),
+    "shared_mixer": ("variate mixer weight-tied across branches (~half mixer params)",
+                     {("model", "mixer_placement"): "shared"}),
+    "time_mixer_only": ("variate mixer in the time branch only (freq unmixed)",
+                        {("model", "mixer_placement"): "time"}),
     "freq_mamba": ("bidirectional Mamba over frequency bins instead of the linear filter",
                    {("model", "freq_encoder"): "mamba"}),
     # --- dispersion chain (STD-style scale forecasting) ---

@@ -905,9 +905,13 @@ best ($0.248$ vs.\ PatchTST's $0.249$) but the difference does not survive
 correction ($q{=}0.23$). ETTm1 is an honest \emph{loss}: PatchTST is lower
 ($0.381$ vs.\ $0.387$) and the gap is confirmed ($q{<}0.001$), consistent
 with the branch matrix, where ETTm1 is carried by the time branch and its
-patch-attention competitor is strong. \model{} reaches this with
-$\approx\,0.25$M parameters, roughly an order of magnitude fewer than the
-variate-attention models. Notably, the confirmatory picture \emph{differs}
+patch-attention competitor is strong. \model{}'s size is
+dataset-dependent: on the low-channel ETT and Exchange datasets it uses only
+$\approx\,0.1$--$0.25$M parameters (an order of magnitude fewer than the
+variate-attention baselines), whereas on high-channel data the variate mixer
+dominates the count and the model is larger (Table~\ref{tab:efficiency});
+that mixer cost is itself reducible, as the complexity analysis below notes.
+Notably, the confirmatory picture \emph{differs}
 from the earlier quoted table (Table~\ref{tab:main}): the clearest
 same-pipeline wins are Electricity and ETTh2 rather than the quoted
 Solar/ETTh1 headline, and the quoted ETTm1 ``tie'' with PatchTST becomes a
@@ -1141,7 +1145,16 @@ from data dimensionality; compute and activation memory instead scale with
 the channel count through the variate mixer (traffic $60$\,GMACs vs.\
 electricity's $22$ at equal width, while ETT and exchange sit two orders of
 magnitude below), keeping the capacity restraint on those datasets
-inexpensive. Wall-clock throughput and matched-baseline runtime remain
+inexpensive. The variate mixer accounts for over $90\%$ of the parameters on
+high-channel data (it scales with the square of the width and is instantiated
+in both branches), so its cost is directly tunable: halving the width takes
+the Electricity model from $19.7$M to $5.3$M, and applying the mixer in a
+single branch or weight-tying one mixer across the two branches --- a
+configuration switch in our implementation --- roughly halves it again (to
+$2.9$M), bringing \model{} into the size range of the variate-attention
+baselines on that dataset. Table~\ref{tab:efficiency} reports the widths that
+produced the accuracy numbers above; the reduced configurations are provided
+for validation. Wall-clock throughput and matched-baseline runtime remain
 unmeasured.
 
 \begin{table}[tb]

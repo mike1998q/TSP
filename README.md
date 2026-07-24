@@ -108,7 +108,7 @@ standard long-term forecasting benchmarks:
 | ETTm1 | `configs/ETTm1.yaml` | 7 | 15 min | 69,680 | canonical 12/4/4 mo | 32 | 1e-4 | halve LR, mixer off |
 | ETTm2 | `configs/ETTm2.yaml` | 7 | 15 min | 69,680 | canonical 12/4/4 mo | 32 | 1e-4 | halve LR, dropout 0.2, low-pass 0.2, mixer off |
 | Weather | `configs/weather.yaml` | 21 | 10 min | 52,696 | 0.7/0.1/0.2 | 32 | 2e-4 | halve LR, d_model 256, Mamba time encoder + 2 variate-Mamba layers, FITS (~5.8M params) |
-| Electricity | `configs/electricity.yaml` | 321 | 1 h | 26,304 | 0.7/0.1/0.2 | 16 | 5e-4 | halve LR, d_model 512, MLP time + 2 variate-Mamba layers |
+| Electricity | `configs/electricity.yaml` | 321 | 1 h | 26,304 | 0.7/0.1/0.2 | 16 | 5e-4 | halve LR, d_model 256 (reduced from 512: 19.7M→5.3M; paper's 0.168 was measured at 512), MLP time + 2 variate-Mamba layers |
 | Solar-Energy | `configs/solar.yaml` | 137 | 10 min | 52,560 | 0.7/0.1/0.2 | 16 | 5e-4 | halve LR, RevIN off (ablation-verified), reads `solar_AL.txt` directly |
 | Exchange-Rate | `configs/exchange_rate.yaml` | 8 | 1 day | 7,588 | 0.7/0.1/0.2 | 32 | 1e-4 | halve LR, d_model 64, dropout 0.3, low-pass 0.5, mixer off |
 | Traffic | `configs/traffic.yaml` | 862 | 1 h | 17,544 | 0.7/0.1/0.2 | 16 | 1e-3 | halve LR, d_model 512, MLP time + 2 variate-Mamba layers (4 tested: no gain) |
@@ -116,8 +116,17 @@ standard long-term forecasting benchmarks:
 All configs train 10 epochs with the halve LR schedule. The cross-channel
 mixer is sized to the dataset: **off** on ETT and Exchange-Rate (few channels,
 small data — it only adds overfitting capacity), 1 layer on weather/solar,
-2 layers at d_model 512 on electricity/traffic where it is the core of the
+2 layers on electricity/traffic where it is the core of the
 model (the S-Mamba recipe: MLP over time, Mamba over variates).
+
+**Parameter budget / the variate mixer.** On high-channel datasets the
+variate mixer is >90% of the parameters (it scales with `d_model²` and is
+instantiated in both branches). Levers: lower `d_model` (electricity ships at
+256, ~5.3M, down from 512's ~19.7M), and `mixer_placement: both|time|freq|shared`
+— `shared` weight-ties one mixer across the two branches and `time`/`freq`
+use a single branch, each ~halving the mixer (electricity → ~2.9M). All are
+accuracy hypotheses to validate; ablation variants `shared_mixer`,
+`time_mixer_only` flip the switch through `scripts/run_ablation.py`.
 
 All datasets use `seq_len: 96` — the standard fixed look-back of the
 Autoformer/TimesNet/iTransformer evaluation protocol, kept identical across
