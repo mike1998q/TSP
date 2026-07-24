@@ -111,7 +111,7 @@ standard long-term forecasting benchmarks:
 | Electricity | `configs/electricity.yaml` | 321 | 1 h | 26,304 | 0.7/0.1/0.2 | 16 | 5e-4 | halve LR, d_model 256 (reduced from 512: 19.7M→5.3M; paper's 0.168 was measured at 512), MLP time + 2 variate-Mamba layers |
 | Solar-Energy | `configs/solar.yaml` | 137 | 10 min | 52,560 | 0.7/0.1/0.2 | 16 | 5e-4 | halve LR, RevIN off (ablation-verified), reads `solar_AL.txt` directly |
 | Exchange-Rate | `configs/exchange_rate.yaml` | 8 | 1 day | 7,588 | 0.7/0.1/0.2 | 32 | 1e-4 | halve LR, d_model 64, dropout 0.3, low-pass 0.5, mixer off |
-| Traffic | `configs/traffic.yaml` | 862 | 1 h | 17,544 | 0.7/0.1/0.2 | 16 | 1e-3 | halve LR, d_model 512, MLP time + 2 variate-Mamba layers (4 tested: no gain) |
+| Traffic | `configs/traffic.yaml` | 862 | 1 h | 17,544 | 0.7/0.1/0.2 | 16 | 1e-3 | halve LR, d_model 256 (reduced from 512: 19.7M→5.3M; paper's traffic numbers were measured at 512), MLP time + 2 variate-Mamba layers (4 tested: no gain) |
 
 All configs train 10 epochs with the halve LR schedule. The cross-channel
 mixer is sized to the dataset: **off** on ETT and Exchange-Rate (few channels,
@@ -121,12 +121,14 @@ model (the S-Mamba recipe: MLP over time, Mamba over variates).
 
 **Parameter budget / the variate mixer.** On high-channel datasets the
 variate mixer is >90% of the parameters (it scales with `d_model²` and is
-instantiated in both branches). Levers: lower `d_model` (electricity ships at
-256, ~5.3M, down from 512's ~19.7M), and `mixer_placement: both|time|freq|shared`
-— `shared` weight-ties one mixer across the two branches and `time`/`freq`
-use a single branch, each ~halving the mixer (electricity → ~2.9M). All are
-accuracy hypotheses to validate; ablation variants `shared_mixer`,
-`time_mixer_only` flip the switch through `scripts/run_ablation.py`.
+instantiated in both branches). Levers: lower `d_model` (electricity and
+traffic now ship at 256, ~5.3M each, down from 512's ~19.7M), and
+`mixer_placement: both|time|freq|shared` — `shared` weight-ties one mixer
+across the two branches and `time`/`freq` use a single branch, each ~halving
+the mixer (→ ~2.9M). All are accuracy hypotheses to validate; ablation
+variants `shared_mixer`, `time_mixer_only` flip the switch through
+`scripts/run_ablation.py`. The paper's electricity/traffic numbers were
+measured at d_model 512.
 
 All datasets use `seq_len: 96` — the standard fixed look-back of the
 Autoformer/TimesNet/iTransformer evaluation protocol, kept identical across

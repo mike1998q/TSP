@@ -1148,13 +1148,13 @@ magnitude below), keeping the capacity restraint on those datasets
 inexpensive. The variate mixer accounts for over $90\%$ of the parameters on
 high-channel data (it scales with the square of the width and is instantiated
 in both branches), so its cost is directly tunable: halving the width takes
-the Electricity model from $19.7$M to $5.3$M, and applying the mixer in a
-single branch or weight-tying one mixer across the two branches --- a
-configuration switch in our implementation --- roughly halves it again (to
-$2.9$M), bringing \model{} into the size range of the variate-attention
-baselines on that dataset. Table~\ref{tab:efficiency} reports the widths that
-produced the accuracy numbers above; the reduced configurations are provided
-for validation. Wall-clock throughput and matched-baseline runtime remain
+the Electricity and Traffic models from $19.7$M to $5.3$M, and applying the
+mixer in a single branch or weight-tying one mixer across the two
+branches --- a configuration switch in our implementation --- roughly halves
+it again (to $2.9$M), bringing \model{} into the size range of the
+variate-attention baselines on those datasets. Table~\ref{tab:efficiency}
+reports the widths that produced the accuracy numbers above; the reduced
+configurations are provided for validation. Wall-clock throughput and matched-baseline runtime remain
 unmeasured.
 
 \begin{table}[tb]
