@@ -41,8 +41,13 @@ DATASETS = {
 # = RevIN helps (removing it hurts); negative = RevIN hurts.
 REVIN_EFFECT = {"Solar": -0.029, "Traffic": +0.100, "ETTh1": +0.006}
 
-C_SERIES = "#0072B2"
-C_STD = "#D55E00"
+# Palette matched to the manuscript's schematic figures.
+C_SERIES = "#2C6FBB"   # blue  - standardized series
+C_STD = "#E07B39"      # amber - rolling std / dispersion
+C_TEAL = "#2A9D8F"     # teal  - KPSS
+C_POS = "#2C6FBB"      # RevIN helps (blue)
+C_NEG = "#C1443C"      # RevIN hurts (red)
+C_INK = "#22303C"
 
 
 def rolling(x1d, w):
@@ -104,8 +109,13 @@ def main():
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    plt.rcParams.update({"font.family": "serif", "font.size": 8,
-                         "axes.linewidth": 0.6, "pdf.fonttype": 42})
+    plt.rcParams.update({
+        "font.family": "sans-serif",
+        "font.sans-serif": ["DejaVu Sans"],
+        "font.size": 8.5, "axes.linewidth": 0.7, "axes.edgecolor": C_INK,
+        "text.color": C_INK, "axes.labelcolor": C_INK, "xtick.color": C_INK,
+        "ytick.color": C_INK, "axes.titlesize": 9.5, "pdf.fonttype": 42,
+        "svg.fonttype": "none"})
 
     res = {}
     for name, (kw, w, _) in DATASETS.items():
@@ -113,8 +123,17 @@ def main():
         res[name] = analyze(name, kw, w)
 
     names = list(DATASETS)
-    fig = plt.figure(figsize=(6.6, 4.2))
-    gs = fig.add_gridspec(2, 3, height_ratios=[1.15, 1.0], hspace=0.55, wspace=0.38)
+    fig = plt.figure(figsize=(7.2, 4.6), constrained_layout=True)
+    fig.set_constrained_layout_pads(hspace=0.10, wspace=0.06)
+    gs = fig.add_gridspec(2, 3, height_ratios=[1.12, 1.0])
+
+    def _bar_labels(ax, bars, fmt="{:.2f}", dy=0.0):
+        for b in bars:
+            h = b.get_height()
+            va = "bottom" if h >= 0 else "top"
+            ax.annotate(fmt.format(h), (b.get_x() + b.get_width() / 2, h),
+                        ha="center", va=va, fontsize=7,
+                        xytext=(0, 2 if h >= 0 else -2), textcoords="offset points")
 
     # Top row: representative channel series + rolling std band.
     for j, name in enumerate(names):
@@ -122,54 +141,50 @@ def main():
         z = res[name]["z"]; rstd = res[name]["roll_std"]
         c = z.shape[1] // 2
         t = np.arange(min(len(z), 1400))
-        ax.plot(t, z[t, c], color=C_SERIES, lw=0.5, label="series (z)")
+        ax.plot(t, z[t, c], color=C_SERIES, lw=0.5, alpha=0.9)
         ax2 = ax.twinx()
-        ax2.plot(t, rstd[t, c], color=C_STD, lw=1.1, label="rolling std")
+        ax2.plot(t, rstd[t, c], color=C_STD, lw=1.3)
         ax2.set_ylim(bottom=0)
-        ax.set_title(f"{name}", fontsize=8.5, loc="left")
-        ax.set_xlabel("time"); ax.tick_params(labelsize=6.5)
-        ax2.tick_params(labelsize=6.5, colors=C_STD)
+        ax.set_title(name, fontsize=9.5, loc="left", color=C_INK, fontweight="bold")
+        ax.set_xlabel("time", fontsize=8)
+        ax.tick_params(labelsize=6.8)
+        ax2.tick_params(labelsize=6.8, colors=C_STD)
+        ax2.spines["right"].set_color(C_STD)
         if j == 0:
-            ax.set_ylabel("standardized value")
+            ax.set_ylabel("standardized value", fontsize=8, color=C_SERIES)
         if j == 2:
-            ax2.set_ylabel("rolling std", color=C_STD)
-        for sp in ("top",):
+            ax2.set_ylabel("rolling std", color=C_STD, fontsize=8)
+        ax.spines["top"].set_visible(False)
+        ax2.spines["top"].set_visible(False)
+
+    # Shared styling for the three bottom bar panels.
+    def _barpanel(cell, values, colors, ylabel, title, ylim=None, fmt="{:.2f}"):
+        ax = fig.add_subplot(cell)
+        bars = ax.bar(names, values, color=colors, width=0.62,
+                      edgecolor="white", linewidth=0.6, zorder=3)
+        ax.set_ylabel(ylabel, fontsize=8)
+        ax.set_title(title, fontsize=9, loc="left", color=C_INK, fontweight="bold")
+        ax.tick_params(labelsize=7.5)
+        ax.grid(axis="y", color=C_INK, alpha=0.10, lw=0.6, zorder=0)
+        for sp in ("top", "right"):
             ax.spines[sp].set_visible(False)
+        if ylim:
+            ax.set_ylim(*ylim)
+        _bar_labels(ax, bars, fmt=fmt)
+        return ax
 
-    # Bottom-left: CV_scale bars.
-    axc = fig.add_subplot(gs[1, 0])
-    cvs = [res[n]["cv"] for n in names]
-    axc.bar(names, cvs, color=C_STD, width=0.6)
-    axc.set_ylabel("CV of rolling std")
-    axc.set_title("(a) Time-varying scale", fontsize=8.5, loc="left")
-    axc.tick_params(labelsize=7)
-    for sp in ("top", "right"):
-        axc.spines[sp].set_visible(False)
+    _barpanel(gs[1, 0], [res[n]["cv"] for n in names], C_STD,
+              "CV of rolling std", "(a) Time-varying scale")
+    axr = _barpanel(gs[1, 1], [REVIN_EFFECT[n] for n in names],
+                    [C_POS if REVIN_EFFECT[n] > 0 else C_NEG for n in names],
+                    r"$\Delta$MSE (off $-$ on)", "(b) RevIN effect",
+                    ylim=(-0.05, 0.118), fmt="{:+.3f}")
+    axr.axhline(0, lw=0.8, color=C_INK, zorder=2)
+    _barpanel(gs[1, 2], [res[n]["kpss_frac"] for n in names], C_TEAL,
+              "frac. non-stationary", "(c) KPSS on rolling std", ylim=(0, 1.12))
 
-    # Bottom-middle: RevIN on/off effect (measured).
-    axr = fig.add_subplot(gs[1, 1])
-    eff = [REVIN_EFFECT[n] for n in names]
-    axr.axhline(0, lw=0.7, color="#444")
-    axr.bar(names, eff, color=["#0072B2" if e > 0 else "#CC3311" for e in eff], width=0.6)
-    axr.set_ylabel(r"$\Delta$MSE (RevIN off$-$on)")
-    axr.set_title("(b) RevIN effect", fontsize=8.5, loc="left")
-    axr.tick_params(labelsize=7)
-    for sp in ("top", "right"):
-        axr.spines[sp].set_visible(False)
-
-    # Bottom-right: scale non-stationarity (KPSS reject fraction).
-    axk = fig.add_subplot(gs[1, 2])
-    kf = [res[n]["kpss_frac"] for n in names]
-    axk.bar(names, kf, color="#009E73", width=0.6)
-    axk.set_ylim(0, 1.05)
-    axk.set_ylabel("frac. non-stationary scale")
-    axk.set_title("(c) KPSS on rolling std", fontsize=8.5, loc="left")
-    axk.tick_params(labelsize=7)
-    for sp in ("top", "right"):
-        axk.spines[sp].set_visible(False)
-
-    fig.savefig("paper/fig_dispersion.pdf", bbox_inches="tight")
-    fig.savefig("paper/fig_dispersion.png", dpi=200, bbox_inches="tight")
+    fig.savefig("paper/fig_dispersion.pdf")
+    fig.savefig("paper/fig_dispersion.png", dpi=200)
     print("[saved] paper/fig_dispersion.pdf")
 
     print("\n=== Dispersion diagnostics (train split) ===")

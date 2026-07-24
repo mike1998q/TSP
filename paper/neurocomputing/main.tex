@@ -10,7 +10,18 @@
 \usepackage{url}
 \usepackage{tikz}
 \usepackage{xcolor}
-\usetikzlibrary{positioning,arrows.meta,fit,backgrounds}
+\usetikzlibrary{positioning,arrows.meta,fit,backgrounds,calc}
+
+% --- shared figure palette (muted, colourblind-friendlier) ---
+\definecolor{cNorm}{HTML}{2A9D8F}
+\definecolor{cTime}{HTML}{2C6FBB}
+\definecolor{cFreq}{HTML}{E07B39}
+\definecolor{cFuse}{HTML}{7A5AA6}
+\definecolor{cSide}{HTML}{2A9D8F}
+\definecolor{cMix}{HTML}{7A5AA6}
+\definecolor{cInk}{HTML}{22303C}
+\definecolor{cTimeBG}{HTML}{EAF1FB}
+\definecolor{cFreqBG}{HTML}{FDF0E6}
 
 \newcommand{\model}{DD-Mamba}
 \newcommand{\best}[1]{\textbf{#1}}
@@ -333,96 +344,121 @@ over variates --- detailed next.
 \centering
 \resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[
-  font=\scriptsize,
-  box/.style={draw, rounded corners=2pt, align=center, inner sep=3pt,
-              minimum height=5.5mm, fill=white},
-  norm/.style={box, fill=teal!16, draw=teal!65!black, thick},
-  tbox/.style={box, fill=blue!10, draw=blue!62!black},
-  tanchor/.style={box, fill=blue!26, draw=blue!62!black, thick},
-  tzero/.style={box, densely dashed, fill=blue!5, draw=blue!62!black},
-  topt/.style={box, dotted, fill=blue!5, draw=blue!62!black},
-  fbox/.style={box, fill=orange!14, draw=orange!78!black},
-  fanchor/.style={box, fill=orange!32, draw=orange!78!black, thick},
-  fzero/.style={box, densely dashed, fill=orange!7, draw=orange!78!black},
-  fopt/.style={box, dotted, fill=orange!7, draw=orange!78!black},
-  fusebox/.style={box, fill=violet!16, draw=violet!62!black, thick},
-  sumc/.style={circle, draw=black!70, inner sep=1pt, fill=yellow!35, font=\footnotesize},
-  arr/.style={-{Stealth[length=1.6mm]}, semithick},
-  feat/.style={-{Stealth[length=1.6mm]}, densely dotted, gray},
-  node distance=3.2mm and 5mm]
+  font=\sffamily\small,
+  >={Stealth[length=2mm]},
+  base/.style={draw, rounded corners=2.4pt, align=center, inner sep=4pt,
+               minimum height=8mm, minimum width=17mm, line width=0.5pt,
+               text=cInk, fill=white},
+  norm/.style={base, draw=cNorm, fill=cNorm!12, line width=0.9pt},
+  tsolid/.style={base, draw=cTime, fill=cTime!12},
+  tanchor/.style={base, draw=cTime, fill=cTime!22, line width=0.9pt},
+  tdash/.style={base, draw=cTime, dashed, fill=cTime!5},
+  topt/.style={base, draw=cTime, dotted, line width=0.9pt, fill=white},
+  fsolid/.style={base, draw=cFreq, fill=cFreq!14},
+  fanchor/.style={base, draw=cFreq, dashed, fill=cFreq!8},
+  fdash/.style={base, draw=cFreq, dashed, fill=cFreq!6},
+  fopt/.style={base, draw=cFreq, dotted, line width=0.9pt, fill=white},
+  fuse/.style={base, draw=cFuse, fill=cFuse!14, line width=0.9pt},
+  sumc/.style={circle, draw=cInk, fill=yellow!30, inner sep=0pt,
+               minimum size=4.4mm, font=\footnotesize},
+  flow/.style={->, draw=cInk!75, line width=0.7pt},
+  tflow/.style={->, draw=cTime, line width=0.9pt},
+  fflow/.style={->, draw=cFreq, line width=0.9pt},
+  feat/.style={->, draw=cFuse!70, dotted, line width=0.9pt},
+  lane/.style={rounded corners=4pt, inner sep=0pt},
+  node distance=6mm and 9mm]
 
-% input / normalization
+% ---------- input / normalization ----------
 \node[norm] (inp) {$\mathbf{X}\in\mathbb{R}^{L\times C}$};
-\node[norm, right=of inp] (revin) {RevIN\\(per dataset)};
+\node[norm, below=8mm of inp] (revin) {RevIN\\{\scriptsize per-dataset}};
+\coordinate (split) at ($(revin.east)+(5mm,0)$);
 
-% time branch (top row)
-\node[tbox, above right=7mm and 6mm of revin] (dec) {decomp\\$\mathbf{X}_s,\mathbf{X}_t$};
-\node[tanchor, above right=1.5mm and 4mm of dec] (dlin) {DLinear anchor\\$\mathbf{W}_s,\mathbf{W}_t$};
-\node[tbox, below=2.5mm of dlin] (mamba) {Mamba encoder\\(causal, over time)};
-\node[topt, right=4mm of mamba] (mixT) {variate mixer\\(BiMamba, opt.)};
-\node[tzero, right=4mm of mixT] (headT) {head $\phi_{\mathrm{time}}$\\(zero-init)};
-\node[sumc, right=3.5mm of headT] (sumT) {$+$};
+% ---------- time lane (top) ----------
+\node[tsolid, above right=10mm and 20mm of revin] (dec) {decompose\\{\scriptsize$\mathbf{X}_s,\mathbf{X}_t$}};
+\node[tanchor, right=of dec] (dlin) {DLinear\\{\scriptsize anchor $\mathbf{W}_s,\mathbf{W}_t$}};
+\node[tsolid, below=5mm of dlin] (mamba) {Mamba enc.\\{\scriptsize causal / time}};
+\node[topt, right=8mm of dlin] (mixT) {variate\\mixer};
+\node[tdash, right=of mixT] (headT) {head $\phi_{\mathrm{t}}$\\{\scriptsize zero-init}};
+\node[sumc, right=6mm of headT] (sumT) {$+$};
 
-% freq branch (bottom row)
-\node[fbox, below right=7mm and 6mm of revin] (fft) {rFFT +\\low-pass $\rho$};
-\node[fanchor, below right=1.5mm and 4mm of fft] (fits) {FITS-style spectral map $\mathbf{U}$\\(zero-init, opt.)};
-\node[fbox, above=2.5mm of fits] (spec) {spectral encoder\\(complex filter)};
-\node[fopt, right=4mm of spec] (mixF) {variate mixer\\(BiMamba, opt.)};
-\node[fzero, right=4mm of mixF] (headF) {head $\phi_{\mathrm{freq}}$\\(zero-init)};
-\node[sumc, right=3.5mm of headF] (sumF) {$+$};
+% ---------- freq lane (bottom) ----------
+\node[fsolid, below right=10mm and 20mm of revin] (fft) {rFFT\\{\scriptsize low-pass $\rho$}};
+\node[fsolid, right=of fft] (spec) {spectral enc.\\{\scriptsize complex filter}};
+\node[fanchor, below=5mm of spec] (fits) {FITS map\\{\scriptsize zero-init, opt.}};
+\node[fopt, right=8mm of spec] (mixF) {variate\\mixer};
+\node[fdash, right=of mixF] (headF) {head $\phi_{\mathrm{f}}$\\{\scriptsize zero-init}};
+\node[sumc, right=6mm of headF] (sumF) {$+$};
 
-% fusion
-\node[fusebox, right=19mm of revin, xshift=62mm] (gate)
-  {gate $g=\sigma(\psi([\mathbf{f}_{\mathrm{t}};\mathbf{f}_{\mathrm{f}}]))$};
-\node[fusebox, right=4mm of gate] (fuse)
-  {$g\,\mathbf{Y}_{\mathrm{time}}$\\$+\,(1{-}g)\,\mathbf{Y}_{\mathrm{freq}}$};
-\node[norm, below=3.2mm of fuse] (out) {de-norm $\rightarrow$\\$\mathbf{Y}\in\mathbb{R}^{H\times C}$};
+% ---------- fusion ----------
+\node[fuse] (gate) at ($(sumT)!0.5!(sumF)+(24mm,0)$) {gate $g$\\{\scriptsize$\sigma(\psi([\mathbf{f}_{\mathrm t};\mathbf{f}_{\mathrm f}]))$}};
+\node[fuse, right=6mm of gate] (comb) {$g\,\mathbf{Y}_{\mathrm t}$\\$+(1{-}g)\mathbf{Y}_{\mathrm f}$};
+\node[norm, below=7mm of comb] (out) {$\mathbf{Y}\in\mathbb{R}^{H\times C}$\\{\scriptsize de-norm}};
 
-% layered branch panels (drawn behind the nodes)
+% ---------- lane bands (behind) ----------
 \begin{scope}[on background layer]
-  \node[fill=blue!6, rounded corners=3pt, draw=blue!35, inner sep=2.4mm,
-        fit=(dec)(dlin)(mixT)(sumT)] (tpanel) {};
-  \node[anchor=north west, font=\scriptsize\bfseries, blue!62!black]
-        at (tpanel.north west) {\;Time branch};
-  \node[fill=orange!7, rounded corners=3pt, draw=orange!40, inner sep=2.4mm,
-        fit=(fft)(fits)(mixF)(sumF)] (fpanel) {};
-  \node[anchor=south west, font=\scriptsize\bfseries, orange!78!black]
-        at (fpanel.south west) {\;Frequency branch};
+  \node[lane, fill=cTimeBG, fit=(dec)(dlin)(mamba)(mixT)(headT)(sumT),
+        inner xsep=4mm, inner ysep=7mm] (tband) {};
+  \node[lane, fill=cFreqBG, fit=(fft)(spec)(fits)(mixF)(headF)(sumF),
+        inner xsep=4mm, inner ysep=7mm] (fband) {};
 \end{scope}
+\node[anchor=west, text=cTime, font=\sffamily\bfseries\footnotesize]
+      at ([xshift=2mm]tband.north west) {TIME BRANCH};
+\node[anchor=west, text=cFreq, font=\sffamily\bfseries\footnotesize]
+      at ([xshift=2mm]fband.south west) {FREQUENCY BRANCH};
 
-% edges
-\draw[arr] (inp) -- (revin);
-\draw[arr] (revin.north) |- (dec.west);
-\draw[arr] (revin.south) |- (fft.west);
-\draw[arr] (dec.east) |- (dlin.west);
-\draw[arr] (dec.east) |- (mamba.west);
-\draw[arr] (mamba) -- (mixT);
-\draw[arr] (mixT) -- (headT);
-\draw[arr] (headT) -- (sumT);
-\draw[arr, blue!62!black] (dlin.east) -| (sumT.north);
-\draw[arr] (fft.east) |- (fits.west);
-\draw[arr] (fft.east) |- (spec.west);
-\draw[arr] (spec) -- (mixF);
-\draw[arr] (mixF) -- (headF);
-\draw[arr] (headF) -- (sumF);
-\draw[arr, orange!78!black] (fits.east) -| (sumF.south);
-\draw[arr, blue!62!black] (sumT.east) -| node[pos=0.25, above]{$\mathbf{Y}_{\mathrm{time}}$} (fuse.north);
-\draw[arr, orange!78!black] (sumF.east) -| node[pos=0.25, below]{$\mathbf{Y}_{\mathrm{freq}}$} (fuse.south);
-\draw[feat] (mixT.south east) -- (gate.north west);
-\draw[feat] (mixF.north east) -- (gate.south west);
-\draw[arr] (gate) -- (fuse);
-\draw[arr] (fuse) -- (out);
+% ---------- edges ----------
+\draw[flow] (inp) -- (revin);
+\draw[flow] (revin.east) -- (split) |- (dec.west);
+\draw[flow] (split) |- (fft.west);
+% time internal: anchor (DLinear) skips to the sum; Mamba->mixer->head corrects
+\draw[tflow] (dec) -- (dlin);
+\draw[tflow] (dec.east) |- (mamba.west);
+\draw[tflow] (mamba.east) -| (mixT.south);
+\draw[tflow] (mixT) -- (headT);
+\draw[tflow] (headT) -- (sumT);
+\draw[tflow] (dlin.north) .. controls +(0,6mm) and +(0,6mm) .. (sumT.north);
+% freq internal: FITS map skips to the sum; spectral enc->mixer->head corrects
+\draw[fflow] (fft) -- (spec);
+\draw[fflow] (fft.east) |- (fits.west);
+\draw[fflow] (spec) -- (mixF);
+\draw[fflow] (mixF) -- (headF);
+\draw[fflow] (headF) -- (sumF);
+\draw[fflow] (fits.south) .. controls +(0,-6mm) and +(0,-6mm) .. (sumF.south);
+% to fusion
+\draw[tflow] (sumT.east) -| node[pos=0.22,above,font=\scriptsize]{$\mathbf{Y}_{\mathrm t}$} (comb.north);
+\draw[fflow] (sumF.east) -| node[pos=0.22,below,font=\scriptsize]{$\mathbf{Y}_{\mathrm f}$} (comb.south);
+\draw[feat] (mixT.east) .. controls +(6mm,0) and +(0,7mm) .. (gate.north);
+\draw[feat] (mixF.east) .. controls +(6mm,0) and +(0,-7mm) .. (gate.south);
+\draw[flow, draw=cFuse] (gate) -- (comb);
+\draw[flow, draw=cFuse] (comb) -- (out);
+
+% ---------- legend ----------
+\begin{scope}[shift={($(fband.south west)+(0,-11mm)$)}]
+  \node[base, draw=cInk!55, fill=white, minimum width=6mm, minimum height=4mm,
+        inner sep=1.5pt] (l1) {};
+  \node[right=1mm of l1, font=\scriptsize, text=cInk] (l1t) {trained anchor};
+  \node[base, draw=cInk!55, dashed, fill=cInk!4, minimum width=6mm,
+        minimum height=4mm, inner sep=1.5pt, right=6mm of l1t] (l2) {};
+  \node[right=1mm of l2, font=\scriptsize, text=cInk] (l2t) {zero-init correction};
+  \node[base, draw=cInk!55, dotted, minimum width=6mm, minimum height=4mm,
+        inner sep=1.5pt, right=6mm of l2t] (l3) {};
+  \node[right=1mm of l3, font=\scriptsize, text=cInk] (l3t) {optional switch};
+  \draw[feat, right=6mm of l3t] ([xshift=6mm]l3t.east) -- ++(7mm,0)
+        node[right=0.5mm,font=\scriptsize,text=cInk]{feature $\to$ gate};
+\end{scope}
 \end{tikzpicture}}
-\caption{\model{} overview, color-coded by role: the \textcolor{teal!65!black}{\textbf{normalization}}
-wrapper (teal), the \textcolor{blue!62!black}{\textbf{time branch}} (blue),
-the \textcolor{orange!78!black}{\textbf{frequency branch}} (orange), and the
-\textcolor{violet!62!black}{\textbf{convex-gate fusion}} (violet). In each
-time branch, a solid-filled DLinear-style backbone runs in parallel with a
-zero-initialized nonlinear head (dashed). The optional frequency-domain map
-and its nonlinear head are also zero-initialized, so the model begins as a
-scaled linear map of the instance-normalized window. Dotted boxes are
-per-dataset switches; dotted grey arrows carry branch features to the gate,
-whose convex weight $g$ mixes the two coloured forecast paths
+\caption{\model{} overview. Colour encodes role ---
+\textcolor{cNorm}{\textbf{normalization}} (teal),
+\textcolor{cTime}{\textbf{time branch}} (blue),
+\textcolor{cFreq}{\textbf{frequency branch}} (orange), and
+\textcolor{cFuse}{\textbf{convex-gate fusion}} (violet) --- while line style
+encodes trainability (legend, bottom): \emph{solid} boxes are trained anchors
+(the DLinear backbone, spectral encoder), \emph{dashed} boxes are
+zero-initialized corrections (the nonlinear heads $\phi$ and the FITS map),
+and \emph{dotted} boxes are per-dataset switches (the variate mixers). Since
+every correction starts at zero, the model begins as a scaled linear map of
+the instance-normalized window. Dotted violet arrows carry branch features to
+the gate, whose convex weight $g$ mixes the two forecast paths
 $\mathbf{Y}_{\mathrm{time}}$ and $\mathbf{Y}_{\mathrm{freq}}$.}
 \label{fig:arch}
 \end{figure}
@@ -528,55 +564,73 @@ active through its encoder and forecast head.
 \centering
 \resizebox{0.92\textwidth}{!}{%
 \begin{tikzpicture}[
-  font=\scriptsize,
-  b/.style={draw=blue!62!black, fill=blue!9, rounded corners=2pt,
-            align=center, inner sep=2.5pt, minimum height=5mm, text width=27mm},
-  scan/.style={draw=blue!62!black, fill=blue!20, rounded corners=2pt,
-               align=center, inner sep=2.5pt, minimum height=5mm, text width=34mm, thick},
-  side/.style={draw=teal!62!black, fill=teal!12, rounded corners=2pt,
-               align=center, inner sep=2pt, minimum height=4.5mm, text width=22mm},
-  op/.style={circle, draw=black!70, fill=yellow!35, inner sep=0.8pt, font=\footnotesize},
-  a/.style={-{Stealth[length=1.5mm]}, semithick},
-  node distance=3mm]
+  font=\sffamily\small,
+  >={Stealth[length=2mm]},
+  b/.style={draw, rounded corners=2.4pt, align=center, inner sep=3.5pt,
+            minimum height=7.5mm, minimum width=30mm, line width=0.5pt,
+            text=cInk, fill=white},
+  bt/.style={b, draw=cTime, fill=cTime!10},
+  scan/.style={b, draw=cTime, fill=cTime!22, line width=0.9pt},
+  side/.style={b, draw=cSide, fill=cSide!12, minimum width=22mm},
+  bm/.style={b, draw=cMix, fill=cMix!12},
+  bms/.style={b, draw=cMix, fill=cMix!22, minimum width=26mm},
+  op/.style={circle, draw=cInk, fill=yellow!30, inner sep=0pt,
+             minimum size=4.6mm, font=\footnotesize},
+  fl/.style={->, draw=cInk!75, line width=0.7pt},
+  ft/.style={->, draw=cTime, line width=0.8pt},
+  fm/.style={->, draw=cMix, line width=0.8pt},
+  node distance=4.2mm]
 
-% ---- panel (a): selective-scan Mamba layer ----
-\node[b] (ain) {$u$: per-variate seq.\ $(L{\times}d_{\mathrm{in}})$};
-\node[b, below=of ain] (anorm) {RMSNorm};
-\node[b, below=of anorm] (aproj) {in\_proj (Linear)};
-\node[b, below=of aproj] (aconv) {causal Conv1d $+$ SiLU};
-\node[scan, below=of aconv] (ascan)
-  {selective scan\\[1pt]$\mathbf{h}_k{=}\bar{\mathbf{A}}_k\mathbf{h}_{k-1}{+}\bar{\mathbf{B}}_k u_k$\\$y_k{=}\mathbf{C}_k^{\top}\mathbf{h}_k{+}Du_k$};
-\node[op, below=3.5mm of ascan] (agate) {$\odot$};
-\node[b, below=3.5mm of agate] (aout) {out\_proj (Linear)};
-\node[op, below=3mm of aout] (aadd) {$+$};
-\node[b, below=3mm of aadd] (aoutn) {corrected features};
-\node[side, right=6mm of aconv] (aparam) {$x$\_proj\\$\to(\boldsymbol{\Delta},\mathbf{B},\mathbf{C})$};
-\node[side, left=6mm of agate] (ares) {SiLU(res)};
+% ================= (a) Mamba layer =================
+\node[bt] (u) {$u$: per-variate seq. $(L{\times}d_{\mathrm{in}})$};
+\node[bt, below=of u] (norm) {RMSNorm};
+\node[bt, below=of norm] (inp) {in\_proj (Linear)};
+\node[bt, below=of inp] (conv) {causal Conv1d $+$ SiLU};
+\node[scan, below=6mm of conv] (scan) {selective scan\\[1pt]
+  {\footnotesize$\mathbf{h}_k{=}\bar{\mathbf{A}}_k\mathbf{h}_{k-1}{+}\bar{\mathbf{B}}_k u_k,\;
+   y_k{=}\mathbf{C}_k^{\top}\mathbf{h}_k{+}Du_k$}};
+\node[op, below=6mm of scan] (gate) {$\odot$};
+\node[bt, below=of gate] (outp) {out\_proj (Linear)};
+\node[op, below=of outp] (res) {$+$};
+\node[bt, below=of res] (cf) {corrected features};
+% side branches
+\node[side, right=16mm of conv] (xproj) {$x$\_proj $\to (\boldsymbol{\Delta},\mathbf{B},\mathbf{C})$};
+\node[side, left=14mm of gate] (silu) {SiLU gate};
 
-\draw[a] (ain)--(anorm); \draw[a] (anorm)--(aproj); \draw[a] (aproj)--(aconv);
-\draw[a] (aconv)--(ascan); \draw[a] (ascan)--(agate); \draw[a] (agate)--(aout);
-\draw[a] (aout)--(aadd); \draw[a] (aadd)--(aoutn);
-\draw[a] (aconv.east)--(aparam.west); \draw[a] (aparam.south) |- (ascan.east);
-\draw[a] (aproj.west) -| (ares.north); \draw[a] (ares)--(agate);
-\draw[a] (ain.west) -- ++(-4mm,0) |- (aadd.west);
-\node[font=\bfseries\footnotesize, above=1mm of ain, blue!62!black]
-  {(a) Mamba layer (time axis)};
+\draw[ft] (u)--(norm); \draw[ft] (norm)--(inp); \draw[ft] (inp)--(conv);
+\draw[ft] (conv)--(scan); \draw[ft] (scan)--(gate);
+\draw[ft] (gate)--(outp); \draw[ft] (outp)--(res); \draw[ft] (res)--(cf);
+\draw[ft] (conv.east) -| (xproj.north);
+\draw[ft] (xproj.south) |- (scan.east);
+\draw[ft] (inp.west) -- ++(-7mm,0) |- (silu.west);
+\draw[ft] (silu.east) -- (gate.west);
+\draw[ft] (inp.west) -- ++(-7mm,0) |- ($(res.west)$);
 
-% ---- panel (b): bidirectional variate mixer ----
-\node[b, right=52mm of ain] (bin) {variate tokens $(C{\times}d)$};
-\node[b, below left=7mm and -6mm of bin] (bfwd) {Mamba $\rightarrow$\\(forward scan)};
-\node[b, below right=7mm and -6mm of bin] (bbwd) {Mamba $\leftarrow$\\(backward, flip)};
-\node[op, below=10mm of bin] (bsum) {$+$};
-\node[b, below=3.5mm of bsum] (bffn) {FFN: Linear-GELU-Linear};
-\node[op, below=3mm of bffn] (badd) {$+$};
-\node[b, below=3mm of badd] (bnorm) {RMSNorm $\to$ mixed feat.};
+% ================= (b) Bidirectional variate mixer =================
+\node[bm, right=54mm of u] (tok) {variate tokens $(C{\times}d)$};
+\node[bms, below left=11mm and 7mm of tok] (fwd) {Mamba\\(forward scan)};
+\node[bms, below right=11mm and 7mm of tok] (bwd) {Mamba\\(backward, flip)};
+\node[op, below=13mm of tok] (msum) {$+$};
+\node[bm, below=7mm of msum] (ffn) {FFN: Linear--GELU--Linear};
+\node[op, below=of ffn] (msum2) {$+$};
+\node[bm, below=of msum2] (mnorm) {RMSNorm};
+\node[bm, below=of mnorm] (mout) {mixed feat.};
 
-\draw[a] (bin.south) -- (bfwd.north); \draw[a] (bin.south) -- (bbwd.north);
-\draw[a] (bfwd.south) -- (bsum); \draw[a] (bbwd.south) -- (bsum);
-\draw[a] (bsum)--(bffn); \draw[a] (bffn)--(badd); \draw[a] (badd)--(bnorm);
-\draw[a] (bin.east) -- ++(7mm,0) |- (bsum.east);
-\draw[a] (bsum.west) -- ++(-6mm,0) |- (badd.west);
-\node[font=\bfseries\footnotesize, above=1mm of bin, blue!62!black]
+\draw[fm] (tok.south) -- ++(0,-3mm) -| (fwd.north);
+\draw[fm] (tok.south) -- ++(0,-3mm) -| (bwd.north);
+\draw[fm] (fwd.south) |- (msum.west);
+\draw[fm] (bwd.south) |- (msum.east);
+\draw[fm] (msum) -- (ffn);
+\draw[fm] (ffn) -- (msum2);
+\draw[fm] (mnorm) -- (mout);
+\draw[fm] (msum2) -- (mnorm);
+% residual around FFN
+\draw[fm] (msum.south) -- ++(-19mm,0) |- (msum2.west);
+
+% ---- panel titles ----
+\node[font=\sffamily\bfseries, text=cTime, above=6mm of u]
+  {(a) Mamba layer — time axis};
+\node[font=\sffamily\bfseries, text=cMix, above=6mm of tok]
   {(b) Bidirectional variate mixer};
 \end{tikzpicture}}
 \caption{Internal structure of \model{}'s two selective-state-space blocks
