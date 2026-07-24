@@ -12,9 +12,18 @@ claims are grounded in `scripts/compute_stats_correction.py`: paired
 per-seed tests with **Benjamini–Hochberg** FDR control. Under correction,
 **0/29** component-placement effects survive (reported as exploratory) and
 **9/54** branch-removal tests survive — 8 on the time branch (ETTm family),
-and on the frequency branch **only Solar@96** (q=0.048). All
-"best-on-N-datasets" SOTA phrasing has been removed; baselines are quoted,
-not rerun, and that is flagged as a prerequisite for any accuracy claim.
+and on the frequency branch **only Solar@96** (q=0.048).
+
+**Unified same-pipeline accuracy (Table 4, `tab:unified`).** Six datasets
+(ETTh1/2, ETTm1/2, Weather, Electricity) now have a five-seed, paired,
+same-pipeline comparison against seven baselines
+(`scripts/run_unified_baselines.py` → `results/unified_*.json`;
+`scripts/analyze_unified_baselines.py` → `results/unified_analysis.json`).
+DD-Mamba has the lowest average MSE on **5/6** and beats the best in-pipeline
+baseline at **BH q<0.05 on 4** (Electricity, ETTh2, ETTm2, ETTh1); Weather is
+a tie (q=0.23); **PatchTST is confirmed better on ETTm1**. These are the
+paper's confirmatory accuracy claims. Solar/Traffic/Exchange remain
+quoted-only (Table 3) pending reruns.
 
 ## Contents
 
@@ -51,12 +60,13 @@ Compile: `pdflatex main && bibtex main && pdflatex main && pdflatex main`.
    (`%% TODO` markers in `main.tex`). Also: author biographies, and complete
    or remove the generative-AI disclosure per the current journal policy.
 2. Fill CRediT roles per real author; funding in Acknowledgements.
-3. **Required before any accuracy claim (the manuscript now states this as a
-   prerequisite, not a nicety):** rerun all baselines in ONE pipeline with a
-   shared implementation, data processing, seed set, and tuning budget —
-   S-Mamba, iTransformer, PatchTST, DLinear, **RLinear**, plus the models
-   the review flagged as missing: **TF4TF** and **ms-Mamba**. Until then the
-   comparison is indicative only.
+3. **Unified baselines — DONE for 6/9 datasets.** ETTh1/2, ETTm1/2, Weather,
+   Electricity are rerun (5 seeds, one pipeline) vs DLinear, NLinear, RLinear,
+   PatchTST, iTransformer, S-Mamba, ms-Mamba. **Remaining:** Solar, Traffic,
+   Exchange (`python scripts/run_unified_baselines.py --config configs/solar.yaml
+   --seeds 5`, etc.), then re-run `analyze_unified_baselines.py`. Optional
+   hardening: swap the repo-native S-Mamba/ms-Mamba for the authors' code and
+   add TF4TF via the `external_impl` adapter.
 4. **Statistical strengthening:** raise seeds from 3 to ≥5 (preferably 10)
    and re-run `scripts/compute_stats_correction.py`; the current n=3 is why
    all component-placement effects are exploratory. Report raw p and BH q for

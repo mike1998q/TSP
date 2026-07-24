@@ -19,6 +19,11 @@ scripts turn those into the paper's tables and statistics.
 
 ## Item 2 — Unified, same-pipeline baselines
 
+> **Status: done for 6/9 datasets.** ETTh1/2, ETTm1/2, Weather, Electricity
+> are complete (`results/unified_*.json`, analyzed in
+> `results/unified_analysis.json`, folded into the paper's Table 4). Remaining:
+> Solar, Traffic, Exchange (same command, other configs).
+
 Replaces the quoted-from-S-Mamba numbers with reruns in one pipeline. Faithful
 in-repo baselines: `dlinear`, `nlinear`, `rlinear`, `patchtst`, `itransformer`,
 `smamba`, `msmamba` (`src/models/baselines.py`). `tf4tf` has **no** fabricated

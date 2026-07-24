@@ -51,11 +51,15 @@ a constrained convex gate, so either branch can be removed and its
 contribution measured directly; a DLinear-style backbone with
 zero-initialized corrections keeps the initial prediction linear in the
 instance-normalized window; and a bidirectional Mamba over variates is a
-per-dataset switch guided by measured channel coupling. On nine
-look-back-96 benchmarks \model{} is competitive with results reported under
-the same protocol, with its clearest margins on Solar and ETTh1; because
-baselines are quoted rather than rerun in one pipeline, we make no
-state-of-the-art claim. The framework's purpose is diagnostic. Across 83
+per-dataset switch guided by measured channel coupling. In a unified
+same-pipeline comparison against seven baselines (five shared seeds, so
+differences are paired), \model{} has the lowest average MSE on five of six
+re-run benchmarks and significantly beats the best in-pipeline baseline on
+four under Benjamini--Hochberg correction (Electricity, ETTh2, ETTm2,
+ETTh1); it ties on Weather and is beaten by PatchTST on ETTm1. Three further
+datasets remain quoted-only pending reruns, so we frame accuracy claims to
+the same-pipeline evidence rather than a blanket state-of-the-art assertion.
+The framework's further purpose is diagnostic. Across 83
 seed-paired comparisons with Benjamini--Hochberg control, all 29
 component-placement effects are exploratory (none survive correction at
 $n{=}3$), while 9 of 54 branch-removal tests survive: the time branch is
@@ -679,23 +683,27 @@ Exchange & 8 & 7{,}588 & 1 day & 0.48 & off & 0.09M \\
 \end{table}
 
 \subsubsection{Baselines}
-We compare against the strongest published results
-under this protocol: S-Mamba \cite{smamba}, iTransformer \cite{itransformer},
-PatchTST \cite{patchtst}, DLinear \cite{dlinear}, and TimesNet
-\cite{timesnet}. Numbers are quoted from \cite{smamba} rather than
-reproduced: the protocol is identical, but training pipelines, seeds, and
-implementations differ across works, so gaps below the descriptive tolerance in
-Section~\ref{sec:repro} relative to quoted
-numbers should be read with caution (flagged in the text). We stress that,
-because the baselines are not rerun in a single pipeline, this comparison is
-\emph{indicative, not confirmatory}, and we make no state-of-the-art claim
-on its basis. A unified rerun --- of these baselines together with the
-recent time--frequency and Mamba models most relevant to our positioning
-(TF4TF \cite{tf4tf}, ms-Mamba \cite{msmamba}) and the strong linear map
-RLinear \cite{rlinear}, under one implementation, data pipeline, seed set,
-and tuning budget --- is the primary experiment needed to turn the
-comparison into evidence, and we flag it as a prerequisite for any accuracy
-claim.
+We compare against strong forecasters spanning the linear, patch-attention,
+inverted-attention, and state-space families. Crucially, we report the
+comparison at \emph{two} levels of rigor. \textbf{(i)~Unified same-pipeline
+reruns} (Table~\ref{tab:unified}): DLinear \cite{dlinear}, NLinear
+\cite{dlinear}, RLinear \cite{rlinear}, PatchTST \cite{patchtst},
+iTransformer \cite{itransformer}, S-Mamba \cite{smamba}, and ms-Mamba
+\cite{msmamba} are re-implemented in our codebase and trained through the
+\emph{identical} data pipeline, splits, schedule, and evaluation as
+\model{}, over five shared seeds --- removing the implementation, split, and
+seed confounds that make cross-paper comparison unsafe. These reruns cover
+six datasets (ETTh1, ETTh2, ETTm1, ETTm2, Weather, Electricity); because
+every model shares seeds, the \model{}-vs-baseline differences are
+\emph{paired} and admit proper significance tests. \textbf{(ii)~Quoted
+results} (Table~\ref{tab:main}): for the three datasets not yet rerun (Solar,
+Traffic, Exchange), and for context on all nine, we additionally show numbers
+quoted from \cite{smamba}; these remain \emph{indicative, not confirmatory},
+since pipelines and seeds differ across works. The repo-native S-Mamba and
+ms-Mamba follow the published designs but are not the authors' code; the
+outstanding rerun work is the three quoted datasets and, ideally, the
+authors' official implementations (and TF4TF \cite{tf4tf}, which has no public
+reference implementation here) through the same adapter.
 
 \subsubsection{Implementation and Reproducibility.}
 \label{sec:repro}
@@ -707,9 +715,13 @@ stability of the $L$-step state accumulation. The decomposition kernel is
 25; Mamba blocks use expansion 2 and conv width 4 throughout; the fusion
 gate's bias is initialized to $2.2$, giving $g_0 = \sigma(2.2) \approx 0.9$
 (Section~\ref{sec:fusion}). Table~\ref{tab:hparams} lists all per-dataset settings; configs
-and the ablation harness ship with the code. All main results are means
-over \emph{three seeds} (2024--2026); the maximum per-entry std across the
-36 dataset--horizon entries is $0.005$ MSE, typically $0.001$--$0.003$.
+and the ablation harness ship with the code. \model{}'s per-horizon results
+(Table~\ref{tab:horizons}) are means over \emph{three seeds} (2024--2026);
+the maximum per-entry std across the 36 dataset--horizon entries is $0.005$
+MSE, typically $0.001$--$0.003$. The unified same-pipeline comparison
+(Table~\ref{tab:unified}) uses \emph{five} shared seeds (2024--2028) for
+every model, and \model{}'s five-seed averages reproduce its three-seed
+numbers to within $0.002$ MSE.
 The table records final empirical configurations, not a transferable
 capacity-selection rule: no common pre-registered search space or equalized
 tuning budget was used across all datasets. Consequently, capacity placement
@@ -727,19 +739,25 @@ with the Benjamini--Hochberg (BH) procedure \emph{within each family} --- the
 and report the resulting $q$-values (\texttt{scripts/compute\_stats\_correction.py}).
 An effect is called \emph{confirmatory} only if it survives BH at $q{<}0.05$;
 raw-significant effects that do not survive are reported as
-\emph{exploratory}. We flag $n{=}3$ as a real limitation of power: five and
-ten seeds are the natural strengthening, and effect sizes with CIs are
-reported throughout so that readers can judge magnitude independently of the
-significance verdict.
-\emph{Against quoted baselines}, pairing is impossible, so $0.005$ MSE is
+\emph{exploratory}. For the ablations we flag $n{=}3$ as a real limitation of
+power; effect sizes with CIs are reported throughout so that readers can
+judge magnitude independently of the significance verdict.
+\emph{Unified same-pipeline comparison} (Table~\ref{tab:unified}): because
+every baseline shares the five seeds with \model{}, we test each
+\model{}-vs-baseline difference on the average-over-horizons MSE with a
+paired two-sided $t$-test ($n{=}5$, $t_{\text{crit}}{=}2.776$) and
+BH-correct across the whole family of comparisons
+(\texttt{scripts/analyze\_unified\_baselines.py}); these are the paper's
+\emph{confirmatory accuracy} tests.
+\emph{Against quoted baselines} (Solar, Traffic, Exchange in
+Table~\ref{tab:main}), pairing is impossible, so $0.005$ MSE is
 used only as a descriptive tolerance based on the largest standard deviation
 among our runs, not as a significance test. Our in-framework DLinear re-run
 shows why: through the identical
 pipeline on ETTh1 it averages $0.462$/$0.456$ MSE/MAE versus its quoted
 $0.456$/$0.452$ --- a $+0.006$ implementation gap, the order of several
-margins in Table~\ref{tab:main}. Cross-paper comparisons therefore cannot
-support sub-$0.01$ distinctions; \model{}'s margin over the in-framework
-DLinear ($0.439$ vs.\ $0.462$) is, by contrast, a same-pipeline comparison.
+margins in Table~\ref{tab:main} --- which is exactly why the same-pipeline
+reruns, not the quoted numbers, carry the accuracy claims below.
 
 \begin{table}[tb]
 \centering
@@ -777,14 +795,16 @@ Exchange & 64 & Mamba (1) & 0 & 8 & 0.5 & no & yes & $10^{-4}$ & 32 & 0.3/$5{\cd
 
 \begin{table}[tb]
 \centering
-\caption{Long-term forecasting results averaged over horizons
-$H \in \{96,192,336,720\}$ with look-back $L{=}96$ (MSE/MAE; lower is
-better). \model{} entries are means over three seeds
-(Table~\ref{tab:horizons} reports per-horizon std). Baselines quoted from
-\cite{smamba}. \textbf{Bold} marks the
-best result \emph{and} every result within the descriptive tolerance
-($<0.005$, Section~\ref{sec:repro}) of it; this formatting is not a
-cross-paper significance claim;
+\caption{\emph{Quoted-baseline} context (all nine datasets): long-term
+forecasting averaged over horizons $H \in \{96,192,336,720\}$, look-back
+$L{=}96$ (MSE/MAE; lower is better). \model{} entries are means over three
+seeds (Table~\ref{tab:horizons} reports per-horizon std). Baselines
+\emph{quoted from} \cite{smamba} --- \emph{indicative, not confirmatory}
+(different pipelines/seeds). The confirmatory, same-pipeline comparison for
+six of these datasets is Table~\ref{tab:unified}; here the quoted numbers
+mainly cover Solar, Traffic, and Exchange, which are not yet rerun.
+\textbf{Bold} marks the best result \emph{and} every result within the
+descriptive tolerance ($<0.005$, Section~\ref{sec:repro}) of it;
 \underline{underline} marks the next-best result.}
 \label{tab:main}
 \scriptsize
@@ -839,24 +859,67 @@ Solar & MSE & $0.180{\scriptstyle\pm.004}$ & $0.195{\scriptstyle\pm.005}$ & $0.2
 \end{tabular}
 \end{table}
 
-Against the quoted results and under the stated descriptive tolerance,
-\model{} shows average-MSE gaps larger than $0.005$ on Solar, ETTh1, and ETTh2
-(Table~\ref{tab:main}; per-horizon values in Table~\ref{tab:horizons}),
-although only the Solar ($0.034$) and ETTh1 ($0.015$) margins also exceed the
-wider $0.01$ cross-paper caution of Section~\ref{sec:repro}; ETTh2's $0.007$
-lies between the two thresholds. The largest margin is on Solar ($0.199$
-vs.\ iTransformer's $0.233$; $-17\%$ vs.\ S-Mamba, with the normalization-free
-configuration of Section~\ref{sec:ablation}). On ETTm1 and ETTm2 it improves
-over the quoted S-Mamba result but ties PatchTST, and on Weather and
-Electricity the gap is below the tolerance. It trails DLinear on Exchange (by
-$0.009$, above tolerance) and S-Mamba on Traffic (by $0.024$), which we
-\emph{hypothesize} reflects the weekly cycle exceeding the look-back. As all
-comparisons are to numbers \emph{reported} in \cite{smamba}, we phrase the
-claim conservatively: \model{} is competitive with results reported under
-this protocol, its clearest margins on Solar and ETTh1, where the linear
-backbone and capacity restraint matter most and \model{} uses
-$\approx\,0.25$M parameters --- roughly an order of magnitude fewer than
-variate-attention models configured for these datasets.
+\begin{table*}[tb]
+\centering
+\caption{\emph{Unified same-pipeline} comparison (average MSE/MAE over
+$H\in\{96,192,336,720\}$, look-back $L{=}96$; \textbf{five shared seeds};
+lower is better). Every baseline is re-implemented and trained through the
+\emph{identical} pipeline, splits, schedule, and evaluation as \model{}, so
+differences are \emph{paired}. \best{Bold} marks the lowest per-dataset
+mean. $^{*}$\,\model{} beats the best competing baseline at
+Benjamini--Hochberg $q{<}0.05$ (paired $t$-test, $n{=}5$;
+\texttt{analyze\_unified\_baselines.py}). \model{} has the lowest mean on
+five of six datasets and the margin is confirmatory on four
+(Electricity, ETTh2, ETTm2, ETTh1); Weather is a statistical tie
+($q{=}0.23$) and PatchTST is confirmed better on ETTm1.}
+\label{tab:unified}
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+Model & ETTh1 & ETTh2 & ETTm1 & ETTm2 & Weather & Electricity \\
+\midrule
+\model{} & \best{0.439}/\best{0.434}$^{*}$ & \best{0.376}/\best{0.401}$^{*}$ & 0.387/0.398 & \best{0.280}/\best{0.325}$^{*}$ & \best{0.248}/\best{0.276} & \best{0.168}/\best{0.263}$^{*}$ \\
+DLinear & 0.462/0.456 & 0.545/0.509 & 0.410/0.412 & 0.359/0.407 & 0.267/0.318 & 0.211/0.299 \\
+NLinear & 0.464/0.450 & 0.390/0.412 & 0.429/0.419 & 0.294/0.337 & 0.279/0.296 & 0.220/0.299 \\
+RLinear & 0.457/0.443 & 0.391/0.411 & 0.424/0.413 & 0.293/0.336 & 0.273/0.292 & 0.217/0.295 \\
+PatchTST & 0.456/0.449 & 0.385/0.408 & \best{0.381}/\best{0.396} & 0.284/0.331 & 0.249/0.275 & 0.189/0.276 \\
+iTransformer & 0.444/0.442 & 0.383/0.407 & 0.407/0.409 & 0.292/0.335 & 0.265/0.285 & 0.195/0.282 \\
+S-Mamba & 0.463/0.458 & 0.394/0.410 & 0.397/0.406 & 0.297/0.335 & 0.251/0.278 & 0.183/0.275 \\
+ms-Mamba & 0.459/0.451 & 0.409/0.420 & 0.393/0.403 & 0.288/0.333 & 0.257/0.281 & 0.187/0.277 \\
+\bottomrule
+\end{tabular}}
+\end{table*}
+
+Table~\ref{tab:unified} is the paper's primary accuracy evidence, because it
+removes the implementation, split, and seed confounds of cross-paper
+comparison. Under this same-pipeline, five-seed protocol \model{} has the
+lowest average MSE on five of the six re-run datasets, and the paired,
+BH-corrected test confirms the margin on \textbf{four}: Electricity
+($0.168$ vs.\ S-Mamba's $0.183$; $q\!\ll\!0.01$), ETTh2 ($0.376$ vs.\
+iTransformer's $0.383$; $q{=}0.001$), ETTm2 ($0.280$ vs.\ PatchTST's
+$0.284$; $q{=}0.015$), and ETTh1 ($0.439$ vs.\ iTransformer's $0.444$;
+$q{=}0.021$). Weather is a statistical \emph{tie} --- \model{} is numerically
+best ($0.248$ vs.\ PatchTST's $0.249$) but the difference does not survive
+correction ($q{=}0.23$). ETTm1 is an honest \emph{loss}: PatchTST is lower
+($0.381$ vs.\ $0.387$) and the gap is confirmed ($q{<}0.001$), consistent
+with the branch matrix, where ETTm1 is carried by the time branch and its
+patch-attention competitor is strong. \model{} reaches this with
+$\approx\,0.25$M parameters, roughly an order of magnitude fewer than the
+variate-attention models. Notably, the confirmatory picture \emph{differs}
+from the earlier quoted table (Table~\ref{tab:main}): the clearest
+same-pipeline wins are Electricity and ETTh2 rather than the quoted
+Solar/ETTh1 headline, and the quoted ETTm1 ``tie'' with PatchTST becomes a
+measured loss --- a direct illustration of why quoted comparison is unsafe.
+
+For the three datasets not yet rerun (Table~\ref{tab:main}, quoted, so
+\emph{indicative only}), \model{}'s largest apparent margin is Solar ($0.199$
+vs.\ iTransformer's $0.233$, with the normalization-free configuration of
+Section~\ref{sec:ablation}); it trails DLinear on Exchange (by $0.009$) and
+S-Mamba on Traffic (by $0.024$), which we \emph{hypothesize} reflects the
+weekly cycle exceeding the look-back. Extending the unified reruns to these
+three is the remaining accuracy experiment.
 
 \subsection{Component Ablations}
 \label{sec:ablation}
@@ -1160,11 +1223,16 @@ series a KPSS test declares non-stationary.}
 \subsection{Threats to validity}
 Several threats remain, each with the experiment that would resolve it.
 
-\paragraph{Quoted baselines.} All baselines except the ETTh1 DLinear re-run
-are quoted from \cite{smamba} rather than reproduced in one pipeline, so no
-accuracy claim should be read as confirmatory until a unified rerun (adding
-TF4TF \cite{tf4tf}, ms-Mamba \cite{msmamba}, and RLinear \cite{rlinear}) is
-completed.
+\paragraph{Quoted baselines (partly resolved).} Six datasets now have a
+unified, five-seed, same-pipeline comparison against seven baselines
+(Table~\ref{tab:unified}), which carries the paper's confirmatory accuracy
+claims. Three datasets (Solar, Traffic, Exchange) are still quoted from
+\cite{smamba} and should be read as indicative only until they are rerun.
+Two caveats remain even for the unified table: the repo-native S-Mamba and
+ms-Mamba are faithful reimplementations, not the authors' code, and TF4TF
+\cite{tf4tf} is not yet included (no public reference implementation);
+dropping in official code through the provided adapter would further harden
+the comparison.
 
 \paragraph{Statistical power and multiplicity.} With $n{=}3$ seeds, tests
 have limited power, and although we apply Benjamini--Hochberg correction,
@@ -1209,11 +1277,14 @@ branches --- a DLinear-style temporal backbone, a selective-state-space
 correction, an optional frequency pathway, and a switchable cross-variate
 mixer, each an independently removable component --- whose purpose is to
 diagnose \emph{when} such
-components pay rather than to claim universal superiority. Against quoted
-results under the look-back-96 protocol it is competitive, with its clearest
-margins on Solar and ETTh1; because the baselines are quoted rather than
-rerun in one pipeline, we draw no state-of-the-art conclusion from the
-comparison. The framework's value is the multiplicity-controlled diagnosis
+components pay rather than to claim universal superiority. In a unified
+same-pipeline comparison (five shared seeds, so differences are paired),
+\model{} has the lowest average MSE on five of six re-run datasets and, under
+Benjamini--Hochberg correction, significantly beats the best in-pipeline
+baseline on four (Electricity, ETTh2, ETTm2, ETTh1); it ties on Weather and
+is beaten by PatchTST on ETTm1, and three datasets remain quoted-only. This
+is a genuine but bounded accuracy result, not a blanket state-of-the-art
+claim. The framework's further value is the multiplicity-controlled diagnosis
 it enables. Under Benjamini--Hochberg correction, all 29 component-placement
 effects are exploratory at three seeds (directionally consistent but not
 confirmed), while the branch matrix confirms 9 of 54 tests: the \emph{time}
@@ -1223,11 +1294,12 @@ initialization is accuracy-neutral and retained only for its interpretable
 linear starting point. The honest reading is thus conditional component
 effectiveness: a confirmed, dataset-specific frequency benefit on Solar, a
 broadly confirmed time branch, and a set of directional placement effects
-that a higher-powered study should adjudicate. Strengthening the
-protocol --- unified baseline reruns, validation-only switch selection with
-a labeled test-oracle bound, more seeds, confirmatory datasets, and matched
-efficiency measurements --- is the path from this diagnostic framework to a
-submission with confirmatory accuracy claims.
+that a higher-powered study should adjudicate. Completing the remaining
+strengthening --- the same-pipeline reruns on the three still-quoted datasets,
+validation-only switch selection with a labeled test-oracle bound, more seeds
+for the ablations, confirmatory datasets, and matched efficiency
+measurements --- is the path from this diagnostic framework to a fully
+confirmatory submission.
 
 
 
