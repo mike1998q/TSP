@@ -57,7 +57,7 @@ train:
   weight_decay: 0.0001
   loss: mse
   grad_clip: 5.0
-  num_workers: 4
+  num_workers: 2
   patience: 5
   amp: true
   lr_scheduler: halve      # lr *= 0.5 each epoch; converges before patience can misfire
