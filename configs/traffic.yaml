@@ -40,9 +40,12 @@ model:
   freq_encoder: linear
   channel_mixer_layers: 2  # tested: 4 layers gave no accuracy gain over 2 on
                            # traffic, so keep the cheaper/faster depth
-  mixer_placement: both    # both|time|freq|shared. 'shared' weight-ties one
-                           # mixer across branches (~halves mixer params ->
-                           # ~2.9M); validate before changing off 'both'.
+  mixer_placement: shared  # VALIDATED optimal (H=96, 3 seeds): weight-tying one
+                           # mixer across branches cuts 5.3M -> 2.9M with no
+                           # significant accuracy change (dMSE +0.0007, CI incl.
+                           # 0). 'time_mixer_only' was significantly worse
+                           # (+0.0045*), so the freq branch keeps its mixing.
+                           # See results/Ablation_traffic_mixer.json.
   fusion: gated
   head_dropout: 0.1
 

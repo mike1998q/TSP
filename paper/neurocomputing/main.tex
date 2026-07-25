@@ -1202,13 +1202,19 @@ magnitude below), keeping the capacity restraint on those datasets
 inexpensive. The variate mixer accounts for over $90\%$ of the parameters on
 high-channel data (it scales with the square of the width and is instantiated
 in both branches), so its cost is directly tunable: halving the width takes
-the Electricity and Traffic models from $19.7$M to $5.3$M, and applying the
-mixer in a single branch or weight-tying one mixer across the two
-branches --- a configuration switch in our implementation --- roughly halves
-it again (to $2.9$M), bringing \model{} into the size range of the
-variate-attention baselines on those datasets. Table~\ref{tab:efficiency}
-reports the widths that produced the accuracy numbers above; the reduced
-configurations are provided for validation. Wall-clock throughput and matched-baseline runtime remain
+the Electricity and Traffic models from $19.7$M to $5.3$M, and
+\emph{weight-tying} one mixer across the two branches --- a configuration
+switch in our implementation --- halves it again to $2.9$M, bringing \model{}
+into the size range of the variate-attention baselines. On Traffic this
+reduction is empirically validated: at $H{=}96$ (three seeds) the tied-mixer
+model matches the untied one within noise ($\Delta\mathrm{MSE}=+0.0007$, 95\%
+CI $[-0.003,+0.005]$), whereas placing the mixer in the time branch
+\emph{only} is significantly worse ($+0.0045$, CI excludes zero) --- so both
+domains need cross-variate mixing, but sharing its weights is free. The tied
+configuration ships for Traffic; the same lever applies to Electricity,
+Weather, and Solar ($31$--$45\%$ fewer parameters), left for validation.
+Table~\ref{tab:efficiency} reports the widths that produced the accuracy
+numbers above. Wall-clock throughput and matched-baseline runtime remain
 unmeasured.
 
 \begin{table}[tb]

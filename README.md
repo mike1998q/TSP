@@ -121,14 +121,29 @@ model (the S-Mamba recipe: MLP over time, Mamba over variates).
 
 **Parameter budget / the variate mixer.** On high-channel datasets the
 variate mixer is >90% of the parameters (it scales with `d_model²` and is
-instantiated in both branches). Levers: lower `d_model` (electricity and
-traffic now ship at 256, ~5.3M each, down from 512's ~19.7M), and
-`mixer_placement: both|time|freq|shared` — `shared` weight-ties one mixer
-across the two branches and `time`/`freq` use a single branch, each ~halving
-the mixer (→ ~2.9M). All are accuracy hypotheses to validate; ablation
-variants `shared_mixer`, `time_mixer_only` flip the switch through
-`scripts/run_ablation.py`. The paper's electricity/traffic numbers were
-measured at d_model 512.
+instantiated in both branches). Levers: lower `d_model`, and
+`mixer_placement: both|time|freq|shared` (`shared` weight-ties one mixer
+across the two branches; `time`/`freq` use one branch).
+
+*Validated on Traffic* (H=96, 3 seeds, `results/Ablation_traffic_mixer.json`):
+`shared` cuts 5.3M→2.9M with **no** significant accuracy change (ΔMSE +0.0007,
+CI includes 0), while `time_mixer_only` is significantly **worse** (+0.0045*)
+— so both branches need mixing, but sharing weights is free. **Traffic now
+ships `d_model 256` + `shared` → 2.9M** (down from d512's 19.7M).
+
+Reduction potential of `shared` on the other mixer-using datasets (analysis;
+validate before committing):
+
+| Dataset | d_model | mixer | current | shared | saving |
+|---|---|---|---|---|---|
+| electricity | 256 | 2 | 5.30M | 2.92M | 45% |
+| traffic | 256 | 2 | 5.30M | **2.92M (shipped)** | 45% |
+| weather | 256 | 2 | 5.77M | 3.49M | 40% |
+| solar | 128 | 1 | 0.96M | 0.66M | 31% |
+| ETTh1/h2/m1/m2, exchange | — | 0 | 0.09–0.36M | — | no mixer to share |
+
+The paper's electricity numbers were measured at d512; ablation variants
+`shared_mixer`, `time_mixer_only` flip the switch through `scripts/run_ablation.py`.
 
 All datasets use `seq_len: 96` — the standard fixed look-back of the
 Autoformer/TimesNet/iTransformer evaluation protocol, kept identical across
