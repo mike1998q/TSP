@@ -19,9 +19,11 @@ data:
   scale: true
 
 model:
-  d_model: 256               # 256 (was 512): the variate mixer dominates params
-                             # and scales with d_model^2; 512->256 cuts the model
-                             # ~19.7M -> ~5.3M. Validate accuracy vs the 512 run.
+  d_model: 512               # Balance point: d512 keeps the accuracy that beats
+                             # S-Mamba (avg MSE 0.168 vs 0.170; d256 dropped it to
+                             # a 0.170 tie). Paired with mixer_placement=shared
+                             # below, the model is ~10.6M -- half of d512+both's
+                             # 19.7M -- so the win is recovered at ~half the params.
   time_kernel_size: 25
   time_dropout: 0.1
   time_encoder: mlp          # S-Mamba recipe: linear/MLP over time,
@@ -36,10 +38,12 @@ model:
   freq_sparsity: 0.0
   freq_encoder: linear
   channel_mixer_layers: 2  # the core of the model on high-channel data
-  mixer_placement: both    # both|time|freq|shared. 'shared' weight-ties one
-                           # mixer across branches (~halves mixer params);
-                           # 'time'/'freq' put it in one branch only. Validate
-                           # before changing off 'both'.
+  mixer_placement: shared  # weight-tie one mixer across branches: validated
+                           # accuracy-neutral on electricity (dMSE -0.0001, CI
+                           # incl. 0; results/Ablation_electricity_mixer.json)
+                           # and halves the mixer -> d512+shared ~10.6M, vs
+                           # d512+both 19.7M. Confirm the d512+shared MSE with
+                           # one run (shared was neutral at d256 too).
   fusion: gated
   head_dropout: 0.1
 
