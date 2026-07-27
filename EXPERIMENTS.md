@@ -1,5 +1,14 @@
 # Revision experiment runbook (review items 2–6)
 
+> **Run everything in one batch:** `bash scripts/run_revision_batch.sh`
+> (needs a GPU + dataset files; resumable; logs to `logs/revision_batch.log`).
+> It runs the validation-only selection protocol (fixes the Solar leakage),
+> the unified same-pipeline baselines incl. Crossformer on all nine datasets,
+> 10-seed ablations + branch-matrix completion + BH stats, PEMS confirmatory
+> runs, and matched efficiency profiling — in that priority order. The
+> per-command reference below explains each step.
+
+
 Turnkey commands for the experiments the *Neurocomputing* review asks for.
 All scaffolding is in place and smoke-tested on CPU; the runs themselves need
 a CUDA GPU (an RTX 5090 was used for the paper). Everything routes through the

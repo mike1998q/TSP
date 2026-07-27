@@ -4,6 +4,7 @@
 
 \usepackage[T1]{fontenc}
 \usepackage{graphicx}
+\usepackage{float}
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs}
 \usepackage{multirow}
@@ -346,126 +347,23 @@ over variates --- detailed next.
 \section{Method}
 \label{sec:method}
 
-\begin{figure}[tb]
+\begin{figure}[H]
 \centering
-\resizebox{\textwidth}{!}{%
-\begin{tikzpicture}[
-  font=\sffamily\small,
-  >={Stealth[length=2mm]},
-  base/.style={draw, rounded corners=2.4pt, align=center, inner sep=4pt,
-               minimum height=8mm, minimum width=17mm, line width=0.5pt,
-               text=cInk, fill=white},
-  norm/.style={base, draw=cNorm, fill=cNorm!12, line width=0.9pt},
-  tsolid/.style={base, draw=cTime, fill=cTime!12},
-  tanchor/.style={base, draw=cTime, fill=cTime!22, line width=0.9pt},
-  tdash/.style={base, draw=cTime, dashed, fill=cTime!5},
-  topt/.style={base, draw=cTime, dotted, line width=0.9pt, fill=white},
-  fsolid/.style={base, draw=cFreq, fill=cFreq!14},
-  fanchor/.style={base, draw=cFreq, dashed, fill=cFreq!8},
-  fdash/.style={base, draw=cFreq, dashed, fill=cFreq!6},
-  fopt/.style={base, draw=cFreq, dotted, line width=0.9pt, fill=white},
-  fuse/.style={base, draw=cFuse, fill=cFuse!14, line width=0.9pt},
-  sumc/.style={circle, draw=cInk, fill=yellow!30, inner sep=0pt,
-               minimum size=4.4mm, font=\footnotesize},
-  flow/.style={->, draw=cInk!75, line width=0.7pt},
-  tflow/.style={->, draw=cTime, line width=0.9pt},
-  fflow/.style={->, draw=cFreq, line width=0.9pt},
-  feat/.style={->, draw=cFuse!70, dotted, line width=0.9pt},
-  lane/.style={rounded corners=4pt, inner sep=0pt},
-  node distance=6mm and 9mm]
-
-% ---------- input / normalization ----------
-\node[norm] (inp) {$\mathbf{X}\in\mathbb{R}^{L\times C}$};
-\node[norm, below=8mm of inp] (revin) {RevIN\\{\scriptsize per-dataset}};
-\coordinate (split) at ($(revin.east)+(5mm,0)$);
-
-% ---------- time lane (top) ----------
-\node[tsolid, above right=10mm and 20mm of revin] (dec) {decompose\\{\scriptsize$\mathbf{X}_s,\mathbf{X}_t$}};
-\node[tanchor, right=of dec] (dlin) {DLinear\\{\scriptsize anchor $\mathbf{W}_s,\mathbf{W}_t$}};
-\node[tsolid, below=5mm of dlin] (mamba) {Mamba enc.\\{\scriptsize causal / time}};
-\node[topt, right=8mm of dlin] (mixT) {variate\\mixer};
-\node[tdash, right=of mixT] (headT) {head $\phi_{\mathrm{t}}$\\{\scriptsize zero-init}};
-\node[sumc, right=6mm of headT] (sumT) {$+$};
-
-% ---------- freq lane (bottom) ----------
-\node[fsolid, below right=10mm and 20mm of revin] (fft) {rFFT\\{\scriptsize low-pass $\rho$}};
-\node[fsolid, right=of fft] (spec) {spectral enc.\\{\scriptsize complex filter}};
-\node[fanchor, below=5mm of spec] (fits) {FITS map\\{\scriptsize zero-init, opt.}};
-\node[fopt, right=8mm of spec] (mixF) {variate\\mixer};
-\node[fdash, right=of mixF] (headF) {head $\phi_{\mathrm{f}}$\\{\scriptsize zero-init}};
-\node[sumc, right=6mm of headF] (sumF) {$+$};
-
-% ---------- fusion ----------
-\node[fuse] (gate) at ($(sumT)!0.5!(sumF)+(24mm,0)$) {gate $g$\\{\scriptsize$\sigma(\psi([\mathbf{f}_{\mathrm t};\mathbf{f}_{\mathrm f}]))$}};
-\node[fuse, right=6mm of gate] (comb) {$g\,\mathbf{Y}_{\mathrm t}$\\$+(1{-}g)\mathbf{Y}_{\mathrm f}$};
-\node[norm, below=7mm of comb] (out) {$\mathbf{Y}\in\mathbb{R}^{H\times C}$\\{\scriptsize de-norm}};
-
-% ---------- lane bands (behind) ----------
-\begin{scope}[on background layer]
-  \node[lane, fill=cTimeBG, fit=(dec)(dlin)(mamba)(mixT)(headT)(sumT),
-        inner xsep=4mm, inner ysep=7mm] (tband) {};
-  \node[lane, fill=cFreqBG, fit=(fft)(spec)(fits)(mixF)(headF)(sumF),
-        inner xsep=4mm, inner ysep=7mm] (fband) {};
-\end{scope}
-\node[anchor=west, text=cTime, font=\sffamily\bfseries\footnotesize]
-      at ([xshift=2mm]tband.north west) {TIME BRANCH};
-\node[anchor=west, text=cFreq, font=\sffamily\bfseries\footnotesize]
-      at ([xshift=2mm]fband.south west) {FREQUENCY BRANCH};
-
-% ---------- edges ----------
-\draw[flow] (inp) -- (revin);
-\draw[flow] (revin.east) -- (split) |- (dec.west);
-\draw[flow] (split) |- (fft.west);
-% time internal: anchor (DLinear) skips to the sum; Mamba->mixer->head corrects
-\draw[tflow] (dec) -- (dlin);
-\draw[tflow] (dec.east) |- (mamba.west);
-\draw[tflow] (mamba.east) -| (mixT.south);
-\draw[tflow] (mixT) -- (headT);
-\draw[tflow] (headT) -- (sumT);
-\draw[tflow] (dlin.north) .. controls +(0,6mm) and +(0,6mm) .. (sumT.north);
-% freq internal: FITS map skips to the sum; spectral enc->mixer->head corrects
-\draw[fflow] (fft) -- (spec);
-\draw[fflow] (fft.east) |- (fits.west);
-\draw[fflow] (spec) -- (mixF);
-\draw[fflow] (mixF) -- (headF);
-\draw[fflow] (headF) -- (sumF);
-\draw[fflow] (fits.south) .. controls +(0,-6mm) and +(0,-6mm) .. (sumF.south);
-% to fusion
-\draw[tflow] (sumT.east) -| node[pos=0.22,above,font=\scriptsize]{$\mathbf{Y}_{\mathrm t}$} (comb.north);
-\draw[fflow] (sumF.east) -| node[pos=0.22,below,font=\scriptsize]{$\mathbf{Y}_{\mathrm f}$} (comb.south);
-\draw[feat] (mixT.east) .. controls +(6mm,0) and +(0,7mm) .. (gate.north);
-\draw[feat] (mixF.east) .. controls +(6mm,0) and +(0,-7mm) .. (gate.south);
-\draw[flow, draw=cFuse] (gate) -- (comb);
-\draw[flow, draw=cFuse] (comb) -- (out);
-
-% ---------- legend ----------
-\begin{scope}[shift={($(fband.south west)+(0,-11mm)$)}]
-  \node[base, draw=cInk!55, fill=white, minimum width=6mm, minimum height=4mm,
-        inner sep=1.5pt] (l1) {};
-  \node[right=1mm of l1, font=\scriptsize, text=cInk] (l1t) {trained anchor};
-  \node[base, draw=cInk!55, dashed, fill=cInk!4, minimum width=6mm,
-        minimum height=4mm, inner sep=1.5pt, right=6mm of l1t] (l2) {};
-  \node[right=1mm of l2, font=\scriptsize, text=cInk] (l2t) {zero-init correction};
-  \node[base, draw=cInk!55, dotted, minimum width=6mm, minimum height=4mm,
-        inner sep=1.5pt, right=6mm of l2t] (l3) {};
-  \node[right=1mm of l3, font=\scriptsize, text=cInk] (l3t) {optional switch};
-  \draw[feat, right=6mm of l3t] ([xshift=6mm]l3t.east) -- ++(7mm,0)
-        node[right=0.5mm,font=\scriptsize,text=cInk]{feature $\to$ gate};
-\end{scope}
-\end{tikzpicture}}
-\caption{\model{} overview. Colour encodes role ---
-\textcolor{cNorm}{\textbf{normalization}} (teal),
-\textcolor{cTime}{\textbf{time branch}} (blue),
-\textcolor{cFreq}{\textbf{frequency branch}} (orange), and
-\textcolor{cFuse}{\textbf{convex-gate fusion}} (violet) --- while line style
-encodes trainability (legend, bottom): \emph{solid} boxes are trained anchors
-(the DLinear backbone, spectral encoder), \emph{dashed} boxes are
-zero-initialized corrections (the nonlinear heads $\phi$ and the FITS map),
-and \emph{dotted} boxes are per-dataset switches (the variate mixers). Since
-every correction starts at zero, the model begins as a scaled linear map of
-the instance-normalized window. Dotted violet arrows carry branch features to
-the gate, whose convex weight $g$ mixes the two forecast paths
-$\mathbf{Y}_{\mathrm{time}}$ and $\mathbf{Y}_{\mathrm{freq}}$.}
+\includegraphics[width=\textwidth]{fig_architecture.pdf}
+\caption{\model{} as a forecast-decomposable architecture. The normalized
+input is routed to two explicit prediction paths. The time branch combines a
+DLinear anchor with a causal-Mamba correction; the frequency branch combines
+a complex spectral encoder with an optional FITS-style linear spectral map.
+Each branch produces a complete forecast, $\mathbf{Y}_{\mathrm{t}}$ or
+$\mathbf{Y}_{\mathrm{f}}$, and branch features parameterize the convex gate
+$g$. Shadowed cuboids denote intermediate tensors, vertical lavender bars
+denote learned operators, purple and green arrows trace the time- and
+frequency-domain paths, gold arrows mark spectral/gating operations, and
+black dashed arrows denote auxiliary or residual connections. Zero
+initialization and dataset-level switches are stated beside their associated
+operators. The final forecast is
+$g\mathbf{Y}_{\mathrm{t}}+(1-g)\mathbf{Y}_{\mathrm{f}}$, followed by inverse
+instance normalization.}
 \label{fig:arch}
 \end{figure}
 
@@ -566,88 +464,19 @@ window, by construction not fitted. The spectral map is enabled per dataset
 (Table~\ref{tab:hparams}); where disabled, the frequency branch remains
 active through its encoder and forecast head.
 
-\begin{figure}[tb]
+\begin{figure}[H]
 \centering
-\resizebox{0.92\textwidth}{!}{%
-\begin{tikzpicture}[
-  font=\sffamily\small,
-  >={Stealth[length=2mm]},
-  b/.style={draw, rounded corners=2.4pt, align=center, inner sep=3.5pt,
-            minimum height=7.5mm, minimum width=30mm, line width=0.5pt,
-            text=cInk, fill=white},
-  bt/.style={b, draw=cTime, fill=cTime!10},
-  scan/.style={b, draw=cTime, fill=cTime!22, line width=0.9pt},
-  side/.style={b, draw=cSide, fill=cSide!12, minimum width=22mm},
-  bm/.style={b, draw=cMix, fill=cMix!12},
-  bms/.style={b, draw=cMix, fill=cMix!22, minimum width=26mm},
-  op/.style={circle, draw=cInk, fill=yellow!30, inner sep=0pt,
-             minimum size=4.6mm, font=\footnotesize},
-  fl/.style={->, draw=cInk!75, line width=0.7pt},
-  ft/.style={->, draw=cTime, line width=0.8pt},
-  fm/.style={->, draw=cMix, line width=0.8pt},
-  node distance=4.2mm]
-
-% ================= (a) Mamba layer =================
-\node[bt] (u) {$u$: per-variate seq. $(L{\times}d_{\mathrm{in}})$};
-\node[bt, below=of u] (norm) {RMSNorm};
-\node[bt, below=of norm] (inp) {in\_proj (Linear)};
-\node[bt, below=of inp] (conv) {causal Conv1d $+$ SiLU};
-\node[scan, below=6mm of conv] (scan) {selective scan\\[1pt]
-  {\footnotesize$\mathbf{h}_k{=}\bar{\mathbf{A}}_k\mathbf{h}_{k-1}{+}\bar{\mathbf{B}}_k u_k,\;
-   y_k{=}\mathbf{C}_k^{\top}\mathbf{h}_k{+}Du_k$}};
-\node[op, below=6mm of scan] (gate) {$\odot$};
-\node[bt, below=of gate] (outp) {out\_proj (Linear)};
-\node[op, below=of outp] (res) {$+$};
-\node[bt, below=of res] (cf) {corrected features};
-% side branches
-\node[side, right=16mm of conv] (xproj) {$x$\_proj $\to (\boldsymbol{\Delta},\mathbf{B},\mathbf{C})$};
-\node[side, left=14mm of gate] (silu) {SiLU gate};
-
-\draw[ft] (u)--(norm); \draw[ft] (norm)--(inp); \draw[ft] (inp)--(conv);
-\draw[ft] (conv)--(scan); \draw[ft] (scan)--(gate);
-\draw[ft] (gate)--(outp); \draw[ft] (outp)--(res); \draw[ft] (res)--(cf);
-\draw[ft] (conv.east) -| (xproj.north);
-\draw[ft] (xproj.south) |- (scan.east);
-\draw[ft] (inp.west) -- ++(-7mm,0) |- (silu.west);
-\draw[ft] (silu.east) -- (gate.west);
-\draw[ft] (inp.west) -- ++(-7mm,0) |- ($(res.west)$);
-
-% ================= (b) Bidirectional variate mixer =================
-\node[bm, right=54mm of u] (tok) {variate tokens $(C{\times}d)$};
-\node[bms, below left=11mm and 7mm of tok] (fwd) {Mamba\\(forward scan)};
-\node[bms, below right=11mm and 7mm of tok] (bwd) {Mamba\\(backward, flip)};
-\node[op, below=13mm of tok] (msum) {$+$};
-\node[bm, below=7mm of msum] (ffn) {FFN: Linear--GELU--Linear};
-\node[op, below=of ffn] (msum2) {$+$};
-\node[bm, below=of msum2] (mnorm) {RMSNorm};
-\node[bm, below=of mnorm] (mout) {mixed feat.};
-
-\draw[fm] (tok.south) -- ++(0,-3mm) -| (fwd.north);
-\draw[fm] (tok.south) -- ++(0,-3mm) -| (bwd.north);
-\draw[fm] (fwd.south) |- (msum.west);
-\draw[fm] (bwd.south) |- (msum.east);
-\draw[fm] (msum) -- (ffn);
-\draw[fm] (ffn) -- (msum2);
-\draw[fm] (mnorm) -- (mout);
-\draw[fm] (msum2) -- (mnorm);
-% residual around FFN
-\draw[fm] (msum.south) -- ++(-19mm,0) |- (msum2.west);
-
-% ---- panel titles ----
-\node[font=\sffamily\bfseries, text=cTime, above=6mm of u]
-  {(a) Mamba layer — time axis};
-\node[font=\sffamily\bfseries, text=cMix, above=6mm of tok]
-  {(b) Bidirectional variate mixer};
-\end{tikzpicture}}
-\caption{Internal structure of \model{}'s two selective-state-space blocks
-(cf.\ the blue boxes in Fig.~\ref{fig:arch}). \textbf{(a)}~The causal Mamba
-layer used as the time-axis encoder (Eq.~\eqref{eq:ssm}): an input-dependent
-selective scan, gated by a SiLU branch and wrapped in a residual, with
-$(\boldsymbol{\Delta},\mathbf{B},\mathbf{C})$ predicted per step from the
-input. \textbf{(b)}~The bidirectional mixer used over the \emph{variate}
-dimension (Section~\ref{sec:mixer}): forward and backward scans of the $C$
-channel tokens summed in one residual stream, then a position-wise
-feed-forward block (the S-Mamba design \cite{smamba}).}
+\includegraphics[width=0.95\textwidth]{fig_selective_blocks.pdf}
+\caption{Selective state-space modules used by \model{}.
+\textbf{(a)}~The causal time-axis Mamba block normalizes and projects the
+input, forms a convolutional content stream and a SiLU gate, predicts
+$(\Delta_k,\mathbf{B}_k,\mathbf{C}_k)$ from the input, and
+evaluates Eq.~\eqref{eq:ssm} with an outer residual connection.
+\textbf{(b)}~The variate mixer scans the $C$ channel tokens in both directions,
+restores the reverse scan to the original order, sums the two streams, and
+applies residual-normalized position-wise feed-forward refinement. The two
+panels distinguish temporal causality (ordered time steps) from non-causal
+cross-channel interaction (channel order has no temporal interpretation).}
 \label{fig:blocks}
 \end{figure}
 
