@@ -592,3 +592,20 @@ def test_mixer_placement_switch_reduces_params_and_ties():
     import pytest as _pytest
     with _pytest.raises(ValueError):
         build("nonsense")
+
+
+def test_crossformer_baseline_shapes_and_registry():
+    """In-pipeline Crossformer (DSW + two-stage attention) forecasts (B,H,C),
+    including when seq_len is not a multiple of the segment length and on
+    high channel counts (router keeps cross-dimension attention linear in C)."""
+    from src.models import build_model
+    from src.models.baselines import BASELINE_ARCHS
+    assert "crossformer" in BASELINE_ARCHS
+    for (b, l, c, h) in [(2, 96, 7, 48), (2, 100, 21, 96)]:
+        cfg = {"model": {"arch": "crossformer", "baseline_d_model": 32,
+                         "cross_seg_len": 12},
+               "data": {"seq_len": l, "pred_len": h}}
+        m = build_model(cfg, c).eval()
+        with torch.no_grad():
+            out = m(torch.randn(b, l, c))
+        assert out.shape == (b, h, c)

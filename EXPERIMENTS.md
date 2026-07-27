@@ -26,8 +26,11 @@ scripts turn those into the paper's tables and statistics.
 
 Replaces the quoted-from-S-Mamba numbers with reruns in one pipeline. Faithful
 in-repo baselines: `dlinear`, `nlinear`, `rlinear`, `patchtst`, `itransformer`,
-`smamba`, `msmamba` (`src/models/baselines.py`). `tf4tf` has **no** fabricated
-in-repo model — supply the authors' code through the adapter.
+`smamba`, `msmamba`, and `crossformer` (DSW embedding + two-stage attention;
+`src/models/baselines.py`). `crossformer` is now in the default sweep but has
+**not been run yet** — its numbers are pending and not in the paper's Table 4.
+`tf4tf` has **no** fabricated in-repo model — supply the authors' code through
+the adapter.
 
 ```bash
 # One dataset, DD-Mamba + all standard baselines, 5 seeds, 4 horizons:

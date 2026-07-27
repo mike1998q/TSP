@@ -279,6 +279,90 @@ class MsMambaBaseline(nn.Module):
         return _wrap(self.norm.denormalize(y), return_components)
 
 
+class _TwoStageAttention(nn.Module):
+    """Crossformer's Two-Stage Attention (Zhang & Yan, ICLR 2023).
+
+    Operates on segment embeddings of shape ``(B, C, S, d)`` (variates $C$,
+    time segments $S$). Stage 1 attends across \emph{time} segments within each
+    variate; stage 2 attends across the \emph{variate} dimension through a small
+    fixed set of ``factor`` learned routers, which keeps the cross-dimension
+    cost linear in $C$ (essential on the 862-channel Traffic set). The router
+    set is shared across time segments (a common, faithful-enough
+    simplification of the per-segment routers in the paper).
+    """
+
+    def __init__(self, d_model, n_heads, factor, dropout):
+        super().__init__()
+        mha = lambda: nn.MultiheadAttention(d_model, n_heads, dropout=dropout,
+                                            batch_first=True)
+        ffn = lambda: nn.Sequential(nn.Linear(d_model, 2 * d_model), nn.GELU(),
+                                    nn.Dropout(dropout), nn.Linear(2 * d_model, d_model))
+        self.time_attn = mha()
+        self.dim_send, self.dim_recv = mha(), mha()
+        self.router = nn.Parameter(torch.randn(factor, d_model) * 0.02)
+        self.n1, self.n2, self.n3, self.n4 = (nn.LayerNorm(d_model) for _ in range(4))
+        self.ff1, self.ff2 = ffn(), ffn()
+
+    def forward(self, x):                                      # (B, C, S, d)
+        B, C, S, d = x.shape
+        # Stage 1: cross-time attention, per variate.
+        t = x.reshape(B * C, S, d)
+        t = self.n1(t + self.time_attn(t, t, t)[0])
+        t = self.n2(t + self.ff1(t))
+        x = t.reshape(B, C, S, d)
+        # Stage 2: router-based cross-dimension attention, per time segment.
+        v = x.permute(0, 2, 1, 3).reshape(B * S, C, d)        # (B*S, C, d)
+        r = self.router.unsqueeze(0).expand(B * S, -1, -1)    # (B*S, factor, d)
+        buf = self.dim_send(r, v, v)[0]                       # routers gather
+        v2 = self.dim_recv(v, buf, buf)[0]                    # variates read back
+        v = self.n3(v + v2)
+        v = self.n4(v + self.ff2(v))
+        return v.reshape(B, S, C, d).permute(0, 2, 1, 3)      # (B, C, S, d)
+
+
+class CrossformerBaseline(nn.Module):
+    """Crossformer (Zhang & Yan, ICLR 2023): DSW embedding + Two-Stage Attention.
+
+    Dimension-Segment-Wise embedding splits each variate's series into
+    length-``seg_len`` segments and embeds each to ``d_model``; a stack of
+    Two-Stage Attention layers models cross-time and cross-variate dependence;
+    a flatten-and-linear head maps to the horizon. This is a faithful
+    reproduction of Crossformer's core (DSW + router-based TSA); it omits the
+    hierarchical multi-scale encoder--decoder merging, using a single-scale
+    encoder with a linear prediction head (a common baseline simplification),
+    so it should be read as a same-pipeline Crossformer-style baseline rather
+    than the authors' exact network.
+    """
+
+    def __init__(self, seq_len, pred_len, n_channels, d_model=128, n_heads=8,
+                 n_layers=3, seg_len=12, factor=10, dropout=0.1):
+        super().__init__()
+        self.seg_len = seg_len
+        self.pad = (seg_len - seq_len % seg_len) % seg_len
+        seg_num = (seq_len + self.pad) // seg_len
+        self.norm = _InstanceNorm(n_channels, affine=True)
+        self.embed = nn.Linear(seg_len, d_model)
+        self.pos = nn.Parameter(torch.randn(1, 1, seg_num, d_model) * 0.02)
+        self.dropout = nn.Dropout(dropout)
+        self.layers = nn.ModuleList([
+            _TwoStageAttention(d_model, n_heads, factor, dropout)
+            for _ in range(n_layers)])
+        self.head = nn.Linear(seg_num * d_model, pred_len)
+
+    def forward(self, x, stats=None, return_components=False):
+        B, L, C = x.shape
+        z = self.norm.normalize(x).permute(0, 2, 1)           # (B, C, L)
+        if self.pad:
+            z = F.pad(z, (0, self.pad), mode="replicate")     # pad time axis
+        z = z.reshape(B, C, -1, self.seg_len)                 # (B, C, S, seg_len)
+        h = self.embed(z) + self.pos                          # (B, C, S, d)
+        h = self.dropout(h)
+        for layer in self.layers:
+            h = layer(h)
+        y = self.head(h.reshape(B, C, -1)).permute(0, 2, 1)   # (B, H, C)
+        return _wrap(self.norm.denormalize(y), return_components)
+
+
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
@@ -286,7 +370,7 @@ class MsMambaBaseline(nn.Module):
 #: Baselines with faithful / repo-native implementations, keyed by ``model.arch``.
 BASELINE_ARCHS = (
     "dlinear", "nlinear", "rlinear", "patchtst", "itransformer",
-    "smamba", "msmamba", "tf4tf",
+    "smamba", "msmamba", "crossformer", "tf4tf",
 )
 
 
@@ -335,6 +419,13 @@ def build_baseline(arch: str, cfg: dict, n_channels: int):
             n_layers=m.get("baseline_layers", 2),
             d_state=m.get("baseline_d_state", 16),
             scales=tuple(m.get("ms_scales", (1, 2, 4))),
+        )
+    if arch == "crossformer":
+        return CrossformerBaseline(
+            seq_len, pred_len, n_channels, d_model=dm,
+            n_layers=m.get("baseline_layers", 3),
+            seg_len=m.get("cross_seg_len", 12),
+            factor=m.get("cross_factor", 10),
         )
     if arch == "tf4tf":
         spec = m.get("external_impl")

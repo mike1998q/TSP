@@ -33,9 +33,8 @@
 
 \begin{frontmatter}
 
-\title{\model{}: A Forecast-Decomposable State-Space Framework for
-Diagnosing When Time, Frequency, and Cross-Variable Components Help
-Multivariate Forecasting}
+\title{\model{}: A Forecast-Decomposable Dual-Domain State-Space Framework
+for Multivariate Forecasting, with a Controlled Component-Ablation Study}
 
 %% TODO (submission): real author list, affiliations, ORCIDs, and the
 %% corresponding author. Neurocomputing review is single-anonymized, so
@@ -70,15 +69,17 @@ four under Benjamini--Hochberg correction (Electricity, ETTh2, ETTm2,
 ETTh1); it ties on Weather and is beaten by PatchTST on ETTm1. Three further
 datasets remain quoted-only pending reruns, so we frame accuracy claims to
 the same-pipeline evidence rather than a blanket state-of-the-art assertion.
-The framework's further purpose is diagnostic. Across 83
+Because every component is removable, we additionally run a controlled,
+multiplicity-corrected ablation study on these benchmarks. Across 83
 seed-paired comparisons with Benjamini--Hochberg control, all 29
 component-placement effects are exploratory (none survive correction at
 $n{=}3$), while 9 of 54 branch-removal tests survive: the time branch is
 robustly necessary on the ETTm datasets, whereas confirmatory evidence for
-the frequency branch is limited to Solar at the 96-step horizon. \model{}
-thus offers a reproducible way to diagnose conditional component
-effectiveness --- which data characteristics reward which components ---
-rather than another universally superior forecaster.
+the frequency branch is limited to Solar at the 96-step horizon. We report
+these as \emph{bounded, dataset-specific} findings on the studied benchmarks,
+not a general rule for when each component helps; establishing such a rule
+would require a formal, independently validated selection mechanism, which we
+leave to future work.
 \end{abstract}
 
 \begin{keyword}
@@ -174,18 +175,21 @@ characterized as exploratory beyond Solar$@$96.
 framework in which the time branch, spectral branch, normalization, and
 cross-variate mixer are each an independently removable component, so their
 marginal value can be measured directly rather than inferred from an
-end-to-end score; \textbf{(2)}~a multiplicity-controlled diagnostic study
---- 83 seed-paired comparisons with Benjamini--Hochberg correction ---
-that reports \emph{which} components are confirmed (the time branch on the
-ETTm datasets; the frequency branch only on Solar$@$96) and which are
-merely exploratory (all component-placement effects at $n{=}3$), rather
-than overclaiming from raw $p$-values; \textbf{(3)}~a concrete architecture
-realizing the framework: a DLinear-style time backbone with
-zero-initialized corrections (making the initial forecast an interpretable
-linear map, shown accuracy-neutral) and an optional dormant spectral
-pathway; and \textbf{(4)}~a data-characteristic account --- linking
-cross-channel PCC and horizon to component value --- that turns the study
-into a practical, validation-only component-selection screen.
+end-to-end score; \textbf{(2)}~a multiplicity-controlled ablation study
+\emph{on the studied benchmarks} --- 83 seed-paired comparisons with
+Benjamini--Hochberg correction --- reporting \emph{which} component effects
+are confirmed (the time branch on the ETTm datasets; the frequency branch
+only on Solar$@$96) and which are merely exploratory (all component-placement
+effects at $n{=}3$), rather than overclaiming from raw $p$-values;
+\textbf{(3)}~a concrete architecture realizing the framework: a DLinear-style
+time backbone with zero-initialized corrections (making the initial forecast
+an interpretable linear map, shown accuracy-neutral) and an optional dormant
+spectral pathway; and \textbf{(4)}~a preliminary data-characteristic
+account --- linking cross-channel PCC and horizon to the measured component
+effects --- offered as a candidate \emph{screening} heuristic rather than a
+validated selection rule. We deliberately do \emph{not} claim a general
+method for predicting when each component helps; that would require a formal,
+independently validated selection mechanism (Section~\ref{sec:discussion}).
 
 \noindent\textbf{Organization.} Section~\ref{sec:related} reviews time
 series analysis tasks, deep models for temporal and for cross-dimensional
@@ -271,16 +275,18 @@ absolute cross-channel Pearson correlation ranges from $0.31$ on ETTh1 to
 $0.91$ on Solar; Table~\ref{tab:datasets}). (iii)~Component-level
 comparisons, when reported at all, typically rest on a handful of seeds and
 uncorrected $p$-values, so it is unclear which claimed effects would survive
-multiplicity control. The gap we target is therefore diagnostic: no prior
-work, to our knowledge, pairs a per-component switchboard with controlled,
-multiplicity-corrected, seed-paired evidence of \emph{where} --- for which
-datasets, correlation regimes, and horizons --- each structure pays.
-\model{} is built to answer exactly that question: independently removable
-time/frequency forecast paths, a switchable variate mixer, zero-initialized
-corrections in the spirit of ReZero \cite{rezero} (an interpretable
-initialization convention, shown accuracy-neutral), and a 27-cell
-branch-ablation matrix, analyzed under Benjamini--Hochberg control, that
-connects data characteristics to component value.
+multiplicity control. The methodological gap we address is therefore
+\emph{measurement}: no prior work, to our knowledge, pairs a per-component
+switchboard with controlled, multiplicity-corrected, seed-paired evidence of
+\emph{where} --- for which datasets, correlation regimes, and horizons ---
+each structure pays on the standard benchmarks. \model{} is built to make
+that measurement possible: independently removable time/frequency forecast
+paths, a switchable variate mixer, zero-initialized corrections in the spirit
+of ReZero \cite{rezero} (an interpretable initialization convention, shown
+accuracy-neutral), and a 27-cell branch-ablation matrix analyzed under
+Benjamini--Hochberg control. We stress that this yields \emph{bounded}
+empirical findings on these datasets, not a validated rule for predicting
+component value on unseen data.
 
 \section{Preliminaries}
 \label{sec:prelim}
@@ -738,26 +744,32 @@ Exchange & 8 & 7{,}588 & 1 day & 0.48 & off & 0.09M \\
 
 \subsubsection{Baselines}
 We compare against strong forecasters spanning the linear, patch-attention,
-inverted-attention, and state-space families. Crucially, we report the
-comparison at \emph{two} levels of rigor. \textbf{(i)~Unified same-pipeline
-reruns} (Table~\ref{tab:unified}): DLinear \cite{dlinear}, NLinear
-\cite{dlinear}, RLinear \cite{rlinear}, PatchTST \cite{patchtst},
-iTransformer \cite{itransformer}, S-Mamba \cite{smamba}, and ms-Mamba
-\cite{msmamba} are re-implemented in our codebase and trained through the
-\emph{identical} data pipeline, splits, schedule, and evaluation as
-\model{}, over five shared seeds --- removing the implementation, split, and
-seed confounds that make cross-paper comparison unsafe. These reruns cover
-six datasets (ETTh1, ETTh2, ETTm1, ETTm2, Weather, Electricity); because
-every model shares seeds, the \model{}-vs-baseline differences are
-\emph{paired} and admit proper significance tests. \textbf{(ii)~Quoted
-results} (Table~\ref{tab:main}): for the three datasets not yet rerun (Solar,
-Traffic, Exchange), and for context on all nine, we additionally show numbers
-quoted from \cite{smamba}; these remain \emph{indicative, not confirmatory},
-since pipelines and seeds differ across works. The repo-native S-Mamba and
-ms-Mamba follow the published designs but are not the authors' code; the
-outstanding rerun work is the three quoted datasets and, ideally, the
-authors' official implementations (and TF4TF \cite{tf4tf}, which has no public
-reference implementation here) through the same adapter.
+inverted-attention, spatial--temporal, and state-space families.
+Crucially, we report the comparison at \emph{two} levels of rigor.
+\textbf{(i)~Unified same-pipeline reruns} (Table~\ref{tab:unified}): DLinear
+\cite{dlinear}, NLinear \cite{dlinear}, RLinear \cite{rlinear}, PatchTST
+\cite{patchtst}, iTransformer \cite{itransformer}, S-Mamba \cite{smamba}, and
+ms-Mamba \cite{msmamba} are re-implemented in our codebase and trained
+through the \emph{identical} data pipeline, splits, schedule, and evaluation
+as \model{}, over five shared seeds --- removing the implementation, split,
+and seed confounds that make cross-paper comparison unsafe. These reruns
+cover six datasets (ETTh1, ETTh2, ETTm1, ETTm2, Weather, Electricity);
+because every model shares seeds, the \model{}-vs-baseline differences are
+\emph{paired} and admit proper significance tests. The spatial--temporal
+Transformer Crossformer \cite{crossformer} (dimension-segment-wise embedding
+with two-stage attention) is now \emph{implemented in this same pipeline} and
+will be included in the rerun; its numbers are not yet in
+Table~\ref{tab:unified} and are pending. \textbf{(ii)~Quoted results}
+(Table~\ref{tab:main}): for the three datasets not yet rerun (Solar, Traffic,
+Exchange), and for context on all nine, we additionally show numbers quoted
+from \cite{smamba}; these remain \emph{indicative, not confirmatory}, since
+pipelines and seeds differ across works. The repo-native S-Mamba, ms-Mamba,
+and Crossformer follow the published designs but are not the authors' code
+(our Crossformer uses a single-scale two-stage-attention encoder with a
+linear head, omitting the hierarchical encoder--decoder merging); the
+outstanding rerun work is the three quoted datasets, the Crossformer run, and,
+ideally, the authors' official implementations (and TF4TF \cite{tf4tf}, which
+has no public reference implementation here) through the same adapter.
 
 \subsubsection{Implementation and Reproducibility.}
 \label{sec:repro}
@@ -1348,30 +1360,31 @@ of the evaluated model.
 \model{} is a forecast-decomposable framework built on state-space
 branches --- a DLinear-style temporal backbone, a selective-state-space
 correction, an optional frequency pathway, and a switchable cross-variate
-mixer, each an independently removable component --- whose purpose is to
-diagnose \emph{when} such
-components pay rather than to claim universal superiority. In a unified
+mixer, each an independently removable component --- which lets us
+\emph{measure} the marginal value of each component rather than claim
+universal superiority. In a unified
 same-pipeline comparison (five shared seeds, so differences are paired),
 \model{} has the lowest average MSE on five of six re-run datasets and, under
 Benjamini--Hochberg correction, significantly beats the best in-pipeline
 baseline on four (Electricity, ETTh2, ETTm2, ETTh1); it ties on Weather and
 is beaten by PatchTST on ETTm1, and three datasets remain quoted-only. This
 is a genuine but bounded accuracy result, not a blanket state-of-the-art
-claim. The framework's further value is the multiplicity-controlled diagnosis
-it enables. Under Benjamini--Hochberg correction, all 29 component-placement
-effects are exploratory at three seeds (directionally consistent but not
-confirmed), while the branch matrix confirms 9 of 54 tests: the \emph{time}
-branch is robustly necessary on the ETTm datasets, whereas confirmatory
-evidence for the \emph{frequency} branch narrows to Solar at $H{=}96$. Zero
-initialization is accuracy-neutral and retained only for its interpretable
-linear starting point. The honest reading is thus conditional component
-effectiveness: a confirmed, dataset-specific frequency benefit on Solar, a
-broadly confirmed time branch, and a set of directional placement effects
-that a higher-powered study should adjudicate. Completing the remaining
-strengthening --- the same-pipeline reruns on the three still-quoted datasets,
-validation-only switch selection with a labeled test-oracle bound, more seeds
-for the ablations, confirmatory datasets, and matched efficiency
-measurements --- is the path from this diagnostic framework to a fully
+claim. The framework's further value is the multiplicity-controlled component
+analysis it enables. Under Benjamini--Hochberg correction, all 29
+component-placement effects are exploratory at three seeds (directionally
+consistent but not confirmed), while the branch matrix confirms 9 of 54
+tests: the \emph{time} branch is robustly necessary on the ETTm datasets,
+whereas confirmatory evidence for the \emph{frequency} branch narrows to
+Solar at $H{=}96$. Zero initialization is accuracy-neutral and retained only
+for its interpretable linear starting point. We therefore report
+\emph{bounded, dataset-specific} component findings on the studied
+benchmarks, and explicitly do not claim a general rule for when each
+component helps: the PCC screen is a candidate heuristic, not a validated
+selector. Turning these measurements into such a rule --- a formal,
+pre-registered, validation-only selection mechanism verified to generalize to
+untouched datasets (e.g., PEMS) --- together with the same-pipeline reruns on
+the three still-quoted datasets, an in-pipeline Crossformer comparison, more
+ablation seeds, and matched efficiency measurements, is the path to a fully
 confirmatory submission.
 
 

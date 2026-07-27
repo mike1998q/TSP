@@ -37,7 +37,7 @@ from src.train import train  # noqa: E402
 from src.utils import apply_overrides, load_config, parse_overrides  # noqa: E402
 
 DEFAULT_ARCHS = ["dual_domain", "dlinear", "nlinear", "rlinear", "patchtst",
-                 "itransformer", "smamba", "msmamba"]
+                 "itransformer", "smamba", "msmamba", "crossformer"]
 
 
 def mean_std(xs):
