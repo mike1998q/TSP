@@ -45,6 +45,18 @@ run python scripts/run_selection_protocol.py --config configs/weather.yaml \
     --switch model.channel_mixer_layers=0,2 \
     --fixed model.use_revin=true,model.channel_mixer_layers=2
 
+# Hands-off: write each VALIDATION-SELECTED switch back into its config
+# (comments preserved), so the runs below use validation-chosen settings only
+# — no test-informed choice survives. --dry-run first to log the diff.
+run python scripts/apply_selection.py --dry-run \
+    checkpoints/selection_solar.json \
+    checkpoints/selection_electricity.json \
+    checkpoints/selection_weather.json
+run python scripts/apply_selection.py \
+    checkpoints/selection_solar.json \
+    checkpoints/selection_electricity.json \
+    checkpoints/selection_weather.json
+
 # -----------------------------------------------------------------------------
 # CONCERN 3: unified same-pipeline baselines (now INCLUDING Crossformer, which
 # is in the default arch sweep) across ALL nine datasets — completes the 6/9

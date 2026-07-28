@@ -609,3 +609,27 @@ def test_crossformer_baseline_shapes_and_registry():
         with torch.no_grad():
             out = m(torch.randn(b, l, c))
         assert out.shape == (b, h, c)
+
+
+def test_apply_selection_update_key():
+    """apply_selection writes validation-selected switches into a config,
+    preserving trailing comments and not touching other sections; a missing
+    key is inserted under its section."""
+    from scripts.apply_selection import update_key, yaml_val
+    lines = [
+        "model:\n",
+        "  use_revin: false  # keep this note\n",
+        "  channel_mixer_layers: 2\n",
+        "train:\n",
+        "  lr: 0.001\n",
+    ]
+    changed, old = update_key(lines, "model", "use_revin", True)
+    assert changed and old == "false"
+    assert lines[1] == "  use_revin: true  # keep this note\n"       # comment kept
+    update_key(lines, "model", "channel_mixer_layers", 0)           # int, no comment
+    assert lines[2].strip() == "channel_mixer_layers: 0"
+    assert any("lr: 0.001" in l for l in lines)                      # other section intact
+    changed, old = update_key(lines, "model", "mixer_placement", "shared")
+    assert changed and old is None                                   # inserted
+    assert any("mixer_placement: shared" in l for l in lines)
+    assert yaml_val(True) == "true" and yaml_val(3) == "3" and yaml_val("shared") == "shared"
