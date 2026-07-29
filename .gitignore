@@ -30,3 +30,12 @@ checkpoints/*.json
 data/*.csv
 data/*.txt
 data/*.gz
+
+# LaTeX build artifacts (main.pdf is intentionally tracked)
+paper/**/*.aux
+paper/**/*.bbl
+paper/**/*.blg
+paper/**/*.log
+paper/**/*.spl
+paper/**/*.out
+paper/**/*.toc
