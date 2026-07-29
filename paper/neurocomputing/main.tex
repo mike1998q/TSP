@@ -244,7 +244,9 @@ scans to the same axes: Mamba \cite{mamba,mamba2} over time, and S-Mamba
 over variate tokens, with recent variants adding multi-scale processing
 (ms-Mamba \cite{msmamba}) and series decomposition (DecMamba
 \cite{decmamba}). G-Mamba \cite{gmamba} further combines
-graph-conditioned state-space dynamics with explicit spatial relations.
+graph-conditioned state-space dynamics with explicit spatial relations, and
+TimePro \cite{timepro} builds variable- and time-aware hyper-states to
+address multi-delay cross-variable effects.
 \model{} sits in this lineage --- causal Mamba over time and bidirectional
 Mamba over variates and frequency bins --- but treats cross-variable
 capacity as a switchable component whose measured value can be analyzed.
@@ -268,12 +270,24 @@ multiplicity control. The methodological gap we address is therefore
 \emph{measurement}: existing architectures provide limited evidence about
 whether an observed gain comes from temporal modeling, spectral modeling,
 or cross-variable capacity, and component studies rarely account for the
-number of comparisons being made. \model{} enables that analysis through
-independently removable time/frequency forecasts, a switchable variate
-mixer, and a 27-cell branch-ablation matrix analyzed under
-Benjamini--Hochberg control. This yields bounded empirical findings on the
-studied datasets, not a validated rule for predicting component value on
-unseen data.
+number of comparisons being made. The closest works in spirit are TimeRecipe
+\cite{timerecipe} and CombinationTS \cite{combinationts}, which decompose
+forecasters into interchangeable modules and benchmark module-level
+effectiveness \emph{across} many architectures at large scale---to distill
+general design recipes or to quantify per-module marginal effectiveness and
+stability. We do not attempt that cross-architecture generality: we instead
+audit components \emph{within} a single forecast-decomposable architecture,
+using per-seed paired tests with Benjamini--Hochberg control and explicitly
+labelling any switch chosen with test feedback as exploratory---so our claims
+are bounded to the studied datasets rather than offered as a transferable
+recipe or a validated selection rule. A formal estimand, multiple backbones,
+or successful held-out component selection would be needed to raise this audit
+to the level of those frameworks; we do not claim it here. Concretely,
+\model{} enables that analysis through independently
+removable time/frequency forecasts, a switchable variate mixer, and a 27-cell
+branch-ablation matrix analyzed under Benjamini--Hochberg control. This yields
+bounded empirical findings on the studied datasets, not a validated rule for
+predicting component value on unseen data.
 
 \section{Preliminaries}
 \label{sec:prelim}
@@ -433,22 +447,29 @@ samples are the branch's linear spectral forecast:
 \begin{equation}
 \mathbf{Y}_{\mathrm{freq}} =
 \underbrace{\mathrm{irFFT}_{L+H}(\mathbf{Z}\mathbf{U}^{\top})[\,L{:}\,]}_{\text{linear-in-frequency}}
-\; + \; \phi_{\mathrm{freq}}(\mathbf{f}_{\mathrm{freq}}),
-\qquad \mathbf{U}, \phi_{\mathrm{freq}} \equiv \mathbf{0} \text{ at init.}
+\; + \; \phi_{\mathrm{freq}}(\mathbf{f}_{\mathrm{freq}}).
 \label{eq:fits}
 \end{equation}
-This pathway uses the frequency interpolation idea of FITS \cite{fits}, but
-is not a fitted FITS model: $\mathbf{U}$ is \emph{zero-initialized}, so the frequency branch
-is silent at initialization (the length-$L$ and length-$(L{+}H)$ frequency
-grids do not align, so no canonical identity init exists, and a random
-$\mathbf{U}$ would inject noise during the highest-learning-rate epochs).
-With the time head, spectral map, and gate all zero or constant at init, the
-end-to-end map in the normalized space is the linear
-$g_0\cdot\mathbf{Y}_{\mathrm{lin}}$; composed with RevIN this is the
-RLinear-class structure \cite{rlinear,revin} --- linear in the normalized
-window, by construction not fitted. The spectral map is enabled per dataset
-(Table~\ref{tab:hparams}); where disabled, the frequency branch remains
-active through its encoder and forecast head.
+This pathway uses the frequency interpolation idea of FITS \cite{fits}, but is
+not a fitted FITS model. When the spectral backbone is enabled
+(Table~\ref{tab:hparams}: ETTh1, ETTh2, Weather), both $\mathbf{U}$ and the
+forecast head $\phi_{\mathrm{freq}}$ are \emph{zero-initialized}, so the
+frequency branch is silent at initialization; we use a zero rather than an
+identity init because the length-$L$ and length-$(L{+}H)$ frequency grids do
+not align, so no canonical identity init exists, and a random $\mathbf{U}$
+would inject noise during the highest-learning-rate epochs. On the remaining
+datasets the spectral backbone is disabled: the linear-in-frequency term of
+Eq.~\eqref{eq:fits} is absent and $\phi_{\mathrm{freq}}$ is
+\emph{randomly} initialized, so there the frequency branch contributes a
+small, gate-attenuated signal from the first step rather than being silent.
+Consequently the clean RLinear-class initialization---in which, with the time
+head, spectral map, and gate all zero or constant at init, the end-to-end map
+in the normalized space reduces to the linear
+$g_0\cdot\mathbf{Y}_{\mathrm{lin}}$ and, composed with RevIN, to the
+RLinear-class structure \cite{rlinear,revin}---holds exactly only for the
+backbone-enabled configurations. Elsewhere it holds approximately, up to the
+$(1{-}g_0)$-weighted random frequency term, which the near-saturated fusion
+gate ($g_0\!\approx\!0.9$) keeps small.
 
 \begin{figure}[H]
 \centering
@@ -586,7 +607,12 @@ preprocessing, optimization, and seeds differ. Crossformer
 but our current adapter omits its hierarchical encoder--decoder merging and
 is therefore not presented as a faithful Crossformer result. Likewise, the
 S-Mamba and ms-Mamba entries are repo-native reproductions rather than
-outputs from the authors' code. The accuracy claim is consequently
+outputs from the authors' code; in particular, our ms-Mamba adapter realizes
+the multi-scale idea by \emph{temporally subsampling} the look-back at rates
+$\{1,2,4\}$ and summing per-scale Mamba encoders, rather than the published
+design's parallel Mamba blocks with distinct per-scale state-space
+sampling-rate ($\Delta$) parameters, so it is a multi-scale proxy rather than
+a faithful ms-Mamba. The accuracy claim is consequently
 restricted to the seven implemented baselines and six datasets in
 Table~\ref{tab:unified}; no superiority claim is made against Crossformer,
 TF4TF, or the three datasets without in-pipeline comparisons.
@@ -651,7 +677,15 @@ encoder, forecast head) but carries no explicit linear pathway; IN:
 instance normalization (RevIN); do.: dropout; B: batch size; wd: weight
 decay. $^{\dagger}$Solar adopts IN~=~no after inspection of a test-set
 ablation (Section~\ref{sec:ablation}); all results under this setting are
-labeled exploratory and excluded from confirmatory claims.}
+labeled exploratory and excluded from confirmatory claims. The widths listed
+here, with the variate mixer instantiated independently in both branches
+(\texttt{mixer\_placement=both}), are the configuration that produced the
+reported accuracy. The repository's default \texttt{configs/electricity.yaml}
+and \texttt{configs/traffic.yaml} ship the parameter-reduced variants used in
+the complexity study (Section~\ref{sec:discussion}: Electricity
+\texttt{d512+shared}, Traffic \texttt{d256+shared}); set
+\texttt{mixer\_placement=both} and $d{=}512$ to reproduce the numbers in this
+table.}
 \label{tab:hparams}
 \scriptsize
 \setlength{\tabcolsep}{3.2pt}
@@ -856,7 +890,7 @@ $H{=}96$} survives ($q{=}0.048$); the other four fall to $q\ge 0.10$. So
 the frequency-side result is narrow and, because Solar's normalization
 setting was selected with test feedback, remains \emph{exploratory}.
 
-\emph{Time branch.} Removing it is significant in 14 cells raw and
+\emph{Time branch.} Removing it is significant in 9 cells raw and
 \textbf{8 survive BH} ($q{<}0.05$): ETTm1 at \emph{every} horizon
 ($+0.017$--$+0.021$, the most persistent effect we measure), ETTm2 at
 $H{=}96$ and $H{=}336$, and Electricity and Exchange at $H{=}96$. The
@@ -1112,7 +1146,13 @@ all 29 component-placement effects fall to $q\ge0.11$: those results are
 exploratory. Raising to five and preferably ten seeds, and reporting raw
 $p$- and corrected $q$-values for every comparison (as we do in
 \texttt{stats\_correction.json}), is needed to move the placement effects
-from directional to confirmatory.
+from directional to confirmatory. A further limitation is that our pairing is
+\emph{positional}: seed index $i$ of one configuration is paired with seed
+index $i$ of another, which shares the initialization and data-shuffling seed
+but does not guarantee an independently verifiable common random-number stream
+across architectures with different parameter-sampling orders. Where such
+pairing cannot be assured, an unpaired or randomization-based sensitivity
+analysis should accompany the paired test.
 
 \paragraph{Model-selection bias.} This is the most consequential threat.
 Although checkpoints are chosen on validation loss, some \emph{switch}
@@ -1131,6 +1171,19 @@ Adding untouched confirmatory datasets (e.g., PEMS03/04/07/08) or previously
 unused temporal test blocks would then verify that the validation-only
 selection logic generalizes rather than having been fit to the existing nine
 benchmarks.
+
+\paragraph{Fusion-gate initialization bias.} The convex fusion gate is
+biased so that $g_0\!\approx\!0.9$ at initialization, deliberately starting
+the model close to the linear temporal pathway. This is an inductive bias,
+not a neutral prior: it down-weights the frequency and correction pathways
+during the highest-learning-rate epochs and interacts with the init
+asymmetry noted in Section~\ref{sec:freq} (the spectral head is zero-init
+only when the FITS backbone is enabled, and randomly initialized otherwise).
+Both choices could depress the measured branch-removal effects, so the branch
+matrix should be read as a lower bound on each domain's importance under this
+particular initialization. A gate-bias sweep and a matched random-vs-zero
+head-init comparison would quantify how much of the temporal dominance we
+report is architectural rather than a consequence of the starting point.
 
 \paragraph{Channel-order sensitivity.} The bidirectional variate mixer is
 non-causal but not permutation-invariant. All results use the canonical
@@ -1195,12 +1248,12 @@ outputs, statistical-analysis scripts, and training logs will be deposited
 in an anonymized repository for review:
 \textit{[repository URL to be inserted before submission]}.
 
-\section*{Declaration of generative AI in the writing process}
-During the preparation of this work the authors used OpenAI ChatGPT to
-assist with language editing, \LaTeX{} revision, and code scaffolding for
-scientific figures. The authors reviewed and verified the manuscript,
-figures, analyses, and citations and take full responsibility for the
-published content.
+\section*{Declaration of generative AI and AI-assisted technologies in the writing process}
+During the preparation of this work the authors used Anthropic Claude in
+order to assist with language editing, \LaTeX{} revision, and code
+scaffolding for the scientific figures. After using this tool, the authors
+reviewed and edited the content as needed and take full responsibility for
+the content of the publication.
 
 \section*{Acknowledgements}
 %% TODO (submission): funding sources.
