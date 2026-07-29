@@ -844,8 +844,9 @@ corresponding main-table entry, and the Solar $H{=}96$ cell replicates the
 earlier ablation ($+0.0126$ vs.\ $+0.0114$, overlapping CIs). The 27 cells
 yield 54 branch-removal tests; we report both raw significance (CI excludes
 zero, marked $^{*}$ in Table~\ref{tab:branchmatrix}) and BH-corrected
-$q$-values. A corrected result is treated as statistically supported only
-when its configuration was not chosen using the same test set.
+$q$-values, visualized in Fig.~\ref{fig:branchmatrix_heat}. A corrected
+result is treated as statistically supported only when its configuration was
+not chosen using the same test set.
 
 \emph{Frequency branch.} At the raw level, removing it is significant in 5
 cells, concentrated at the shortest horizon: Solar ($+0.0126$), ETTm1
@@ -905,6 +906,21 @@ Exchange & $+.0015^{*}$ & --- & --- & --- & $+.0058^{*}$ & --- & --- & --- \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{fig_branch_matrix.pdf}
+\caption{Branch-removal effect ($\Delta$MSE) across datasets and horizons,
+visualizing Table~\ref{tab:branchmatrix}: \textbf{(a)}~removing the frequency
+branch and \textbf{(b)}~removing the time branch. Warm cells mark
+configurations where removal \emph{hurts} (the branch is valuable), cool cells
+where removal \emph{helps} (the branch is redundant), and gray where there is
+no effect; a $\bigstar$ marks effects surviving Benjamini--Hochberg correction
+($q<0.05$). Only Solar$@$96 survives on the frequency side, whereas the time
+branch is confirmed across the ETTm datasets and at $H{=}96$ on Electricity and
+Exchange. ``n/a'': not run.}
+\label{fig:branchmatrix_heat}
+\end{figure}
 
 \begin{table}[tb]
 \centering
@@ -1024,13 +1040,28 @@ Traffic & 862 & 19.70 & 60.2 & 682.7 \\
 \subsection{Data characteristics as validation hypotheses}
 The placement results suggest three hypotheses for future validation, not a
 deployment rule. First, stronger dependence between channels may justify
-testing a variate mixer, but raw PCC ignores lagged and nonlinear structure.
+testing a variate mixer (Fig.~\ref{fig:pcc}), but raw PCC ignores lagged and
+nonlinear structure.
 Second, a spectral path may help when the look-back does not resolve dominant
 periods; the present frequency evidence is based on a test-informed setting
 and does not establish this relationship. Third, normalization may interact
 with changing scale and periodic zeros. Each choice must be selected on
 validation data, frozen before test evaluation, and compared with a fixed
 configuration.
+
+\begin{figure}[tb]
+\centering
+\includegraphics[width=0.82\textwidth]{fig_pcc_mixer.pdf}
+\caption{Channel coupling versus the variate-mixer decision. Bars give the
+mean absolute cross-channel Pearson correlation on the training split; solid
+bars are datasets where the mixer is enabled, hatched bars where it is
+disabled. Stronger coupling coincides with enabling the mixer, but Exchange is
+the instructive exception: its moderate correlation is co-trending rather than
+exploitable cross-sectional signal, so the mixer stays off. This is why we
+treat PCC as a screening \emph{hypothesis}, not a selection rule. Weather is
+omitted (training-split PCC unavailable in this study).}
+\label{fig:pcc}
+\end{figure}
 
 \subsection{Dispersion diagnostics: why normalization is dataset-dependent}
 \label{sec:dispdiag}
