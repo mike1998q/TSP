@@ -9,6 +9,7 @@
 \usepackage{booktabs}
 \usepackage{multirow}
 \usepackage{url}
+\usepackage{placeins}
 \usepackage{tikz}
 \usepackage{xcolor}
 \usetikzlibrary{positioning,arrows.meta,fit,backgrounds,calc}
@@ -35,7 +36,7 @@
 \begin{frontmatter}
 
 \title{\model{}: A Forecast-Decomposable Dual-Domain State-Space Framework
-for Multivariate Forecasting, with a Controlled Component-Ablation Study}
+for Multivariate Time-Series Forecasting}
 
 %% TODO (submission): real author list, affiliations, ORCIDs, and the
 %% corresponding author. Neurocomputing review is single-anonymized, so
@@ -47,40 +48,31 @@ for Multivariate Forecasting, with a Controlled Component-Ablation Study}
 \address[aff1]{Department, University, City, Country}
 
 \begin{abstract}
-From power grids to road networks, long-term multivariate forecasting must
-capture local time-domain dynamics, periodic structure that is compact in
-the frequency domain, and cross-channel dependencies whose strength varies
-enormously across datasets: the mean absolute inter-channel correlation
-spans $0.31$ on ETTh1 to $0.91$ on Solar. Combining time- and
-frequency-domain representations, and doing so with state-space backbones,
-is by now well explored. We therefore do not claim dual-domain or
-time--frequency Mamba modeling as novel; instead we ask \emph{when} each
-component actually pays. We present \model{}, a \emph{forecast-decomposable}
-state-space framework built for that question: a decomposition-based time
-branch and a learned spectral branch each emit a full forecast, combined by
-a constrained convex gate, so either branch can be removed and its
-contribution measured directly; a DLinear-style backbone with
-zero-initialized corrections keeps the initial prediction linear in the
-instance-normalized window; and a bidirectional Mamba over variates is a
-per-dataset switch guided by measured channel coupling. In a unified
-same-pipeline comparison against seven baselines (five shared seeds, so
-differences are paired), \model{} has the lowest average MSE on five of six
-re-run benchmarks and significantly beats the best in-pipeline baseline on
-four under Benjamini--Hochberg correction (Electricity, ETTh2, ETTm2,
-ETTh1); it ties on Weather and is beaten by PatchTST on ETTm1. Three further
-datasets remain quoted-only pending reruns, so we frame accuracy claims to
-the same-pipeline evidence rather than a blanket state-of-the-art assertion.
-Because every component is removable, we additionally run a controlled,
-multiplicity-corrected ablation study on these benchmarks. Across 83
-seed-paired comparisons with Benjamini--Hochberg control, all 29
-component-placement effects are exploratory (none survive correction at
-$n{=}3$), while 9 of 54 branch-removal tests survive: the time branch is
-robustly necessary on the ETTm datasets, whereas confirmatory evidence for
-the frequency branch is limited to Solar at the 96-step horizon. We report
-these as \emph{bounded, dataset-specific} findings on the studied benchmarks,
-not a general rule for when each component helps; establishing such a rule
-would require a formal, independently validated selection mechanism, which we
-leave to future work.
+Long-term multivariate forecasting requires a model to represent temporal
+dynamics, periodic structure, and cross-variable dependence without assuming
+that every dataset benefits from the same capacity. Existing dual-domain
+models usually fuse these sources internally, making their individual effects
+difficult to assess. We present \model{}, a forecast-decomposable state-space
+framework in which a decomposition-based temporal branch and a learned
+spectral branch each produce a complete forecast and are combined by a convex
+gate. A switchable bidirectional variate mixer provides cross-channel
+capacity, while a linear temporal pathway and zero-initialized corrections
+give the model a simple starting map. The design supports controlled component
+removal rather than inferring component value from a single end-to-end score.
+On six benchmarks rerun in one pipeline against seven baselines, \model{}
+obtains the lowest average MSE on five datasets; seed-matched tests with
+Benjamini--Hochberg correction support improvements over the strongest
+in-pipeline competitor on four, while Weather is tied and PatchTST is better
+on ETTm1. Across 83 component comparisons, none of the 29 placement effects
+survives multiplicity correction at three seeds. Eight corrected
+branch-removal effects support the temporal branch, chiefly on ETTm data.
+The only corrected frequency-side effect occurs for Solar at horizon 96, but
+because that dataset's normalization switch was selected with test feedback,
+we treat it as exploratory rather than confirmatory. Training-set channel
+correlation and dispersion statistics provide descriptive hypotheses for
+capacity placement, not a validated selector. The results therefore support
+a component-wise analysis framework and bounded dataset-specific findings,
+not universal superiority or a general rule for model selection.
 \end{abstract}
 
 \begin{keyword}
@@ -136,18 +128,20 @@ forecast path whose marginal value can be measured.
 mixing is effective on several high-dimensional benchmarks
 \cite{itransformer,smamba,crossformer}, but the underlying data property it
 exploits --- how strongly channels are actually correlated --- differs by a
-factor of three across the standard benchmarks (Table~\ref{tab:datasets}),
-and our controlled results show the same module can overfit a weakly
-coupled, low-channel dataset. This motivates treating the mixer as an
-explicit, data-diagnosable option rather than a universal setting.
+factor of three across the standard benchmarks (Table~\ref{tab:datasets}).
+This motivates treating the mixer as an explicit option rather than a
+universal setting, while testing rather than assuming that correlation
+predicts its value.
 
 We answer these three gaps with \model{} (Fig.~\ref{fig:arch}), mapping
 each to one structural remedy: \emph{(i)}~a DLinear-style time backbone with
 zero-initialized nonlinear corrections; \emph{(ii)}~parallel time and
 frequency forecasts, including an optional dormant FITS-style spectral map,
 fused by a convex gate; and \emph{(iii)}~a bidirectional variate mixer
-switched on or off per dataset. Paired ablations test these choices below;
-only effects whose confidence intervals exclude zero are treated as supported.
+switched on or off per dataset. Seed-matched ablations test these choices
+below; effect sizes and confidence intervals are reported for every
+comparison, and a finding is considered statistically supported only when
+it survives the stated multiplicity correction.
 
 Concretely, the time branch combines a DLinear-style pathway
 \cite{dlinear} with a zero-initialized nonlinear correction, while the
@@ -163,34 +157,27 @@ effects --- the variate mixer helping Weather while hurting ETTh1,
 normalization helping Weather while hurting Solar --- are visible at the
 raw level but, at three seeds, \emph{none} survive BH correction; we
 therefore report them as \emph{exploratory} directional evidence, not
-confirmed effects. Branch removal is sharper: of 54 branch tests, 9 survive
-BH, and they are dominated by the \emph{time} branch (necessary on ETTm1 at
-every horizon and on ETTm2, Electricity, and Exchange at $H{=}96$).
-Confirmatory support for the \emph{frequency} branch narrows after
-correction to a single cell, Solar at $H{=}96$; its raw significance on
-ETTm1, Electricity, Exchange, and ETTm2@336 does not survive BH. The
-dual-domain benefit is thus real but sharply conditional, and honestly
-characterized as exploratory beyond Solar$@$96.
+confirmed effects. Branch removal is sharper: of 54 branch tests, nine meet
+the BH threshold. Eight concern the \emph{time} branch on ETTm1, ETTm2,
+Electricity, and Exchange. The ninth is the frequency-side Solar cell at
+$H{=}96$; however,
+because Solar's normalization switch was selected after test-set inspection,
+that result is treated as exploratory. The current clean evidence therefore
+supports the temporal pathway but does not establish a general dual-domain
+advantage.
 
-\noindent\textbf{Contributions.} \textbf{(1)}~A \emph{forecast-decomposable}
-framework in which the time branch, spectral branch, normalization, and
-cross-variate mixer are each an independently removable component, so their
-marginal value can be measured directly rather than inferred from an
-end-to-end score; \textbf{(2)}~a multiplicity-controlled ablation study
-\emph{on the studied benchmarks} --- 83 seed-paired comparisons with
-Benjamini--Hochberg correction --- reporting \emph{which} component effects
-are confirmed (the time branch on the ETTm datasets; the frequency branch
-only on Solar$@$96) and which are merely exploratory (all component-placement
-effects at $n{=}3$), rather than overclaiming from raw $p$-values;
-\textbf{(3)}~a concrete architecture realizing the framework: a DLinear-style
-time backbone with zero-initialized corrections (making the initial forecast
-an interpretable linear map, shown accuracy-neutral) and an optional dormant
-spectral pathway; and \textbf{(4)}~a preliminary data-characteristic
-account --- linking cross-channel PCC and horizon to the measured component
-effects --- offered as a candidate \emph{screening} heuristic rather than a
-validated selection rule. We deliberately do \emph{not} claim a general
-method for predicting when each component helps; that would require a formal,
-independently validated selection mechanism (Section~\ref{sec:discussion}).
+\noindent\textbf{Contributions.} \textbf{(1)}~A
+\emph{forecast-decomposable} architecture in which temporal and spectral
+paths emit complete predictions and the normalization, variate mixer, and
+branch pathways can be removed without redefining the forecasting task.
+\textbf{(2)}~A component-level evaluation protocol that reports
+seed-matched effect sizes and confidence intervals and controls the false
+discovery rate across 83 comparisons; importantly, it distinguishes the
+eight supported temporal-branch effects from exploratory placement and
+frequency-side findings. \textbf{(3)}~A data-centric analysis relating the
+measured effects to training-set cross-channel correlation, horizon, and
+dispersion. These statistics are used to formulate testable hypotheses,
+not presented as a validated selection rule.
 
 \noindent\textbf{Organization.} Section~\ref{sec:related} reviews time
 series analysis tasks, deep models for temporal and for cross-dimensional
@@ -214,9 +201,10 @@ backbones such as TimesNet \cite{timesnet}, whose representations transfer
 across tasks. Long-term multivariate \emph{forecasting}, our setting, is
 the most benchmark-standardized of these problems: fixed look-back,
 multi-horizon evaluation, and shared splits \cite{informer,itransformer}
-make it the natural arena for controlled architectural evidence, and
-findings about which structures a dataset rewards typically carry over to
-the sibling tasks that reuse forecasting backbones.
+make it a suitable arena for controlled architectural evidence. Although
+backbone ideas transfer across tasks, the component effects measured here
+are specific to forecasting and should not be assumed to hold for
+classification, anomaly detection, or imputation without separate tests.
 
 \subsection{Temporal-Dependency Models}
 One line models dependencies along
@@ -255,11 +243,11 @@ scans to the same axes: Mamba \cite{mamba,mamba2} over time, and S-Mamba
 \cite{smamba}, TimeMachine \cite{timemachine}, and FMamba \cite{fmamba}
 over variate tokens, with recent variants adding multi-scale processing
 (ms-Mamba \cite{msmamba}) and series decomposition (DecMamba
-\cite{decmamba}). \model{} sits in this lineage --- causal Mamba over
-time, bidirectional Mamba over variates and frequency bins --- but, rather
-than proposing yet another fixed Mamba topology, treats the spatial
-dimension as a \emph{switchable} module whose value is measured per
-dataset.
+\cite{decmamba}). G-Mamba \cite{gmamba} further combines
+graph-conditioned state-space dynamics with explicit spatial relations.
+\model{} sits in this lineage --- causal Mamba over time and bidirectional
+Mamba over variates and frequency bins --- but treats cross-variable
+capacity as a switchable component whose measured value can be analyzed.
 
 \subsection{Research Gap}
 Dual-domain forecasting \cite{tf4tf}, time--frequency and decomposition
@@ -277,17 +265,15 @@ $0.91$ on Solar; Table~\ref{tab:datasets}). (iii)~Component-level
 comparisons, when reported at all, typically rest on a handful of seeds and
 uncorrected $p$-values, so it is unclear which claimed effects would survive
 multiplicity control. The methodological gap we address is therefore
-\emph{measurement}: no prior work, to our knowledge, pairs a per-component
-switchboard with controlled, multiplicity-corrected, seed-paired evidence of
-\emph{where} --- for which datasets, correlation regimes, and horizons ---
-each structure pays on the standard benchmarks. \model{} is built to make
-that measurement possible: independently removable time/frequency forecast
-paths, a switchable variate mixer, zero-initialized corrections in the spirit
-of ReZero \cite{rezero} (an interpretable initialization convention, shown
-accuracy-neutral), and a 27-cell branch-ablation matrix analyzed under
-Benjamini--Hochberg control. We stress that this yields \emph{bounded}
-empirical findings on these datasets, not a validated rule for predicting
-component value on unseen data.
+\emph{measurement}: existing architectures provide limited evidence about
+whether an observed gain comes from temporal modeling, spectral modeling,
+or cross-variable capacity, and component studies rarely account for the
+number of comparisons being made. \model{} enables that analysis through
+independently removable time/frequency forecasts, a switchable variate
+mixer, and a 27-cell branch-ablation matrix analyzed under
+Benjamini--Hochberg control. This yields bounded empirical findings on the
+studied datasets, not a validated rule for predicting component value on
+unseen data.
 
 \section{Preliminaries}
 \label{sec:prelim}
@@ -488,16 +474,26 @@ leaves accuracy on the table when variates are coupled
 \cite{itransformer,smamba,crossformer}. Inside each branch, before its
 head, we optionally run $M$ layers of \emph{bidirectional} Mamba over the
 $C$ per-channel features, followed by a position-wise feed-forward block
-(Fig.~\ref{fig:blocks}b). Bidirectionality is essential: channel order
-carries no causal direction, so each layer sums a forward and a reversed
-scan in one residual stream. Whether such mixing \emph{should} pay is a
-property of the data: the mean absolute pairwise Pearson correlation (PCC)
-between channels on the training split spans $0.31$--$0.35$ on the
-weakly coupled ETT family but $0.50$--$0.91$ on Electricity, Traffic, and
-Solar (Table~\ref{tab:datasets}). We therefore expose the mixer as a
-per-dataset switch --- on for strongly coupled, many-channel benchmarks,
-off for weakly coupled, few-channel ones (per-dataset settings in
-Section~\ref{sec:setup}) --- and test the decision in both directions in
+(Fig.~\ref{fig:blocks}b). Because channel order carries no causal direction,
+each layer sums a forward and a reversed scan in one residual stream. This
+construction is non-causal, but it is \emph{not} permutation-invariant: an
+arbitrary reordering of channels can change both scans. We retain each
+dataset's canonical column order and treat order sensitivity as a limitation
+rather than attributing set-like symmetry to the mixer.
+
+As a descriptive measure of channel coupling, we compute on the training
+split
+\begin{equation}
+\overline{|r|}
+=\frac{2}{C(C-1)}\sum_{1\le i<j\le C}
+\left|\operatorname{corr}(\mathbf{x}^{(i)},\mathbf{x}^{(j)})\right|.
+\label{eq:pcc}
+\end{equation}
+It spans $0.31$--$0.35$ on the ETT family and $0.50$--$0.91$ on
+Electricity, Traffic, and Solar (Table~\ref{tab:datasets}). Raw PCC does not
+represent lagged, nonlinear, or conditional dependence and can be inflated
+by common trends; it is therefore used only to organize the analysis. The
+mixer remains a per-dataset switch whose value is evaluated empirically in
 Section~\ref{sec:ablation}.
 
 \subsection{Forecast-Level Convex Fusion}
@@ -515,8 +511,9 @@ g = \sigma\!\big(\psi([\mathbf{f}_{\mathrm{time}};
 with $\psi$ applied row-wise (per variate), followed by RevIN
 de-normalization. Since $\mathbf{Y}$ lies elementwise between the branch
 forecasts, both domains retain an explicit prediction path, and the gate
-value reports each branch's convex mixing weight --- a lightweight proxy
-for its contribution, not a causal attribution. The constraint is
+value records the convex mixing weight. It is neither an identifiable
+component contribution nor a causal attribution, because the branches are
+jointly trained and can compensate for one another. The constraint is
 structural, not behavioral: $g$ is a sigmoid and can saturate near 0 or 1,
 so one branch may contribute very little --- by design, as the ablations
 show the useful domain is dataset-dependent. $\psi$ is zero-initialized
@@ -528,11 +525,10 @@ initialization convention; empirical gate distributions are not available in
 the present study.
 
 \subsection{Training}
-We minimize MSE with AdamW under a halving schedule
-($\eta_e = \eta_0 \cdot 2^{-(e-1)}$). All runs use 10 epochs with
-best-checkpoint early stopping. This schedule was held fixed across our runs
-but was not compared with cosine, warm-up, or longer-budget alternatives;
-schedule sensitivity therefore remains a potential confound.
+All branches, gates, and heads are optimized jointly by minimizing the MSE
+between the forecast and the target. Optimizer, schedule, stopping rule, and
+dataset-specific settings are reported with the experimental protocol in
+Section~\ref{sec:repro}.
 
 \section{Experiments}
 \label{sec:experiments}
@@ -572,56 +568,53 @@ Exchange & 8 & 7{,}588 & 1 day & 0.48 & off & 0.09M \\
 \end{table}
 
 \subsubsection{Baselines}
-We compare against strong forecasters spanning the linear, patch-attention,
-inverted-attention, spatial--temporal, and state-space families.
-Crucially, we report the comparison at \emph{two} levels of rigor.
-\textbf{(i)~Unified same-pipeline reruns} (Table~\ref{tab:unified}): DLinear
+We compare linear, attention-based, and state-space forecasters. The primary
+comparison uses one evaluation pipeline (Table~\ref{tab:unified}): DLinear
 \cite{dlinear}, NLinear \cite{dlinear}, RLinear \cite{rlinear}, PatchTST
 \cite{patchtst}, iTransformer \cite{itransformer}, S-Mamba \cite{smamba}, and
 ms-Mamba \cite{msmamba} are re-implemented in our codebase and trained
-through the \emph{identical} data pipeline, splits, schedule, and evaluation
-as \model{}, over five shared seeds --- removing the implementation, split,
-and seed confounds that make cross-paper comparison unsafe. These reruns
+through the same data pipeline, splits, schedule, and evaluation as
+\model{}, over five matched run indices. These controls reduce split and
+evaluation confounds, but do not equalize model-specific tuning budgets.
+The reruns
 cover six datasets (ETTh1, ETTh2, ETTm1, ETTm2, Weather, Electricity);
-because every model shares seeds, the \model{}-vs-baseline differences are
-\emph{paired} and admit proper significance tests. The spatial--temporal
-Transformer Crossformer \cite{crossformer} (dimension-segment-wise embedding
-with two-stage attention) is now \emph{implemented in this same pipeline} and
-will be included in the rerun; its numbers are not yet in
-Table~\ref{tab:unified} and are pending. \textbf{(ii)~Quoted results}
-(Table~\ref{tab:main}): for the three datasets not yet rerun (Solar, Traffic,
-Exchange), and for context on all nine, we additionally show numbers quoted
-from \cite{smamba}; these remain \emph{indicative, not confirmatory}, since
-pipelines and seeds differ across works. The repo-native S-Mamba, ms-Mamba,
-and Crossformer follow the published designs but are not the authors' code
-(our Crossformer uses a single-scale two-stage-attention encoder with a
-linear head, omitting the hierarchical encoder--decoder merging); the
-outstanding rerun work is the three quoted datasets, the Crossformer run, and,
-ideally, the authors' official implementations (and TF4TF \cite{tf4tf}, which
-has no public reference implementation here) through the same adapter.
+seed-matched differences are analyzed as described below.
+
+Published results are not mixed with this ranking because their
+preprocessing, optimization, and seeds differ. Crossformer
+\cite{crossformer} is a particularly relevant spatial--temporal baseline,
+but our current adapter omits its hierarchical encoder--decoder merging and
+is therefore not presented as a faithful Crossformer result. Likewise, the
+S-Mamba and ms-Mamba entries are repo-native reproductions rather than
+outputs from the authors' code. The accuracy claim is consequently
+restricted to the seven implemented baselines and six datasets in
+Table~\ref{tab:unified}; no superiority claim is made against Crossformer,
+TF4TF, or the three datasets without in-pipeline comparisons.
 
 \subsubsection{Implementation and Reproducibility.}
 \label{sec:repro}
-All experiments use PyTorch 2.11 (CUDA 13.0) on a single NVIDIA RTX 5090.
-Optimization is AdamW (grad clip $5.0$), 10 epochs with the learning rate
-halved each epoch, early stopping on validation loss, and mixed precision
-with the selective-scan recurrence kept in full precision for numerical
-stability of the $L$-step state accumulation. The decomposition kernel is
-25; Mamba blocks use expansion 2 and conv width 4 throughout; the fusion
-gate's bias is initialized to $2.2$, giving $g_0 = \sigma(2.2) \approx 0.9$
-(Section~\ref{sec:fusion}). Table~\ref{tab:hparams} lists all per-dataset settings; configs
-and the ablation harness ship with the code. \model{}'s per-horizon results
+All experiments use PyTorch 2.11 on a single NVIDIA RTX 5090.
+Optimization is AdamW for at most 10 epochs, with the learning rate halved
+after each epoch, gradient clipping at 5.0, and best-checkpoint early
+stopping on validation loss. The decomposition kernel is 25; Mamba blocks
+use expansion 2 and convolution width 4. The search space, selected
+configurations, and remaining implementation details are reported in
+Table~\ref{tab:hparams} and the reproducibility package. This schedule was
+held fixed across runs but was not compared with longer-budget or warm-up
+alternatives, so schedule sensitivity remains a potential confound.
+\model{}'s
+per-horizon results
 (Table~\ref{tab:horizons}) are means over \emph{three seeds} (2024--2026);
 the maximum per-entry std across the 36 dataset--horizon entries is $0.005$
-MSE, typically $0.001$--$0.003$. The unified same-pipeline comparison
-(Table~\ref{tab:unified}) uses \emph{five} shared seeds (2024--2028) for
+MSE, typically $0.001$--$0.003$. The unified in-pipeline comparison
+(Table~\ref{tab:unified}) uses \emph{five} matched run indices (2024--2028) for
 every model, and \model{}'s five-seed averages reproduce its three-seed
 numbers to within $0.002$ MSE.
 The table records final empirical configurations, not a transferable
-capacity-selection rule: no common pre-registered search space or equalized
-tuning budget was used across all datasets. Consequently, capacity placement
-is reported as an empirical finding, and new datasets require
-validation-only selection of these switches.
+capacity-selection rule. No common preregistered search space or equalized
+model-specific tuning budget was used. Consequently, the comparison should
+be read as a standardized-pipeline evaluation rather than a fully
+budget-matched benchmark.
 \subsubsection{Statistical Methodology}
 We compare at two levels.
 \emph{Within our framework} (ablations), every variant shares seeds with
@@ -632,27 +625,20 @@ overstate significance, so we additionally control the false discovery rate
 with the Benjamini--Hochberg (BH) procedure \emph{within each family} --- the
 29 component-placement comparisons and the 54 branch-removal comparisons ---
 and report the resulting $q$-values (\texttt{scripts/compute\_stats\_correction.py}).
-An effect is called \emph{confirmatory} only if it survives BH at $q{<}0.05$;
-raw-significant effects that do not survive are reported as
-\emph{exploratory}. For the ablations we flag $n{=}3$ as a real limitation of
-power; effect sizes with CIs are reported throughout so that readers can
-judge magnitude independently of the significance verdict.
-\emph{Unified same-pipeline comparison} (Table~\ref{tab:unified}): because
-every baseline shares the five seeds with \model{}, we test each
-\model{}-vs-baseline difference on the average-over-horizons MSE with a
-paired two-sided $t$-test ($n{=}5$, $t_{\text{crit}}{=}2.776$) and
-BH-correct across the whole family of comparisons
-(\texttt{scripts/analyze\_unified\_baselines.py}); these are the paper's
-\emph{confirmatory accuracy} tests.
-\emph{Against quoted baselines} (Solar, Traffic, Exchange in
-Table~\ref{tab:main}), pairing is impossible, so $0.005$ MSE is
-used only as a descriptive tolerance based on the largest standard deviation
-among our runs, not as a significance test. Our in-framework DLinear re-run
-shows why: through the identical
-pipeline on ETTh1 it averages $0.462$/$0.456$ MSE/MAE versus its quoted
-$0.456$/$0.452$ --- a $+0.006$ implementation gap, the order of several
-margins in Table~\ref{tab:main} --- which is exactly why the same-pipeline
-reruns, not the quoted numbers, carry the accuracy claims below.
+An effect is called statistically supported only if it survives BH at
+$q{<}0.05$ and its configuration was not selected using the same test set;
+all other effects are reported as exploratory. For the ablations we flag
+$n{=}3$ as a substantial limitation of power; effect sizes with CIs are
+reported throughout so that readers can judge magnitude independently of
+the significance verdict.
+\emph{Unified in-pipeline comparison} (Table~\ref{tab:unified}): we test
+each \model{}-vs-baseline difference on average-over-horizons MSE using the
+five matched run indices and a paired two-sided $t$-test
+($t_{\text{crit}}{=}2.776$), followed by BH correction across the comparison
+family (\texttt{scripts/analyze\_unified\_baselines.py}). The paired
+interpretation relies on matching run index and data order; with only five
+runs, effect magnitudes and uncertainty are considered alongside the
+corrected tests.
 
 \begin{table}[tb]
 \centering
@@ -663,9 +649,9 @@ layers; $N$: SSM state size; $\rho$: spectral low-pass fraction
 --- when ``no'', the frequency branch remains fully active (rFFT, spectral
 encoder, forecast head) but carries no explicit linear pathway; IN:
 instance normalization (RevIN); do.: dropout; B: batch size; wd: weight
-decay. $^{\dagger}$Solar adopts IN~=~no from the ablation finding
-(Section~\ref{sec:ablation}); its main results were re-measured under this
-configuration across all horizons and seeds.}
+decay. $^{\dagger}$Solar adopts IN~=~no after inspection of a test-set
+ablation (Section~\ref{sec:ablation}); all results under this setting are
+labeled exploratory and excluded from confirmatory claims.}
 \label{tab:hparams}
 \scriptsize
 \setlength{\tabcolsep}{3.2pt}
@@ -686,45 +672,14 @@ Exchange & 64 & Mamba (1) & 0 & 8 & 0.5 & no & yes & $10^{-4}$ & 32 & 0.3/$5{\cd
 \end{tabular}
 \end{table}
 
+\FloatBarrier
 \subsection{Main Results}
 
 \begin{table}[tb]
 \centering
-\caption{\emph{Quoted-baseline} context (all nine datasets): long-term
-forecasting averaged over horizons $H \in \{96,192,336,720\}$, look-back
-$L{=}96$ (MSE/MAE; lower is better). \model{} entries are means over three
-seeds (Table~\ref{tab:horizons} reports per-horizon std). Baselines
-\emph{quoted from} \cite{smamba} --- \emph{indicative, not confirmatory}
-(different pipelines/seeds). The confirmatory, same-pipeline comparison for
-six of these datasets is Table~\ref{tab:unified}; here the quoted numbers
-mainly cover Solar, Traffic, and Exchange, which are not yet rerun.
-\textbf{Bold} marks the best result \emph{and} every result within the
-descriptive tolerance ($<0.005$, Section~\ref{sec:repro}) of it;
-\underline{underline} marks the next-best result.}
-\label{tab:main}
-\scriptsize
-\setlength{\tabcolsep}{2.6pt}
-\begin{tabular}{@{}lcccccc@{}}
-\toprule
-Dataset & \model{} (ours) & S-Mamba & iTransformer & PatchTST & DLinear & TimesNet \\
-\midrule
-ETTh1 & \best{0.439}/\best{0.434} & 0.455/0.450 & \second{0.454}/\second{0.447} & 0.469/0.454 & 0.456/0.452 & 0.458/0.450 \\
-ETTh2 & \best{0.374}/\best{0.401} & \second{0.381}/\best{0.405} & 0.383/\second{0.407} & 0.387/\second{0.407} & 0.559/0.515 & 0.414/0.427 \\
-ETTm1 & \best{0.386}/\best{0.398} & \second{0.398}/\second{0.405} & 0.407/0.410 & \best{0.387}/\best{0.400} & 0.403/0.407 & 0.400/0.406 \\
-ETTm2 & \best{0.280}/\best{0.325} & \second{0.288}/\second{0.332} & \second{0.288}/\second{0.332} & \best{0.281}/\best{0.326} & 0.350/0.401 & 0.291/0.333 \\
-Weather & \best{0.248}/\best{0.276} & \best{0.251}/\best{0.276} & \second{0.258}/\best{0.278} & 0.259/\second{0.281} & 0.265/0.317 & 0.259/0.287 \\
-Electricity & \best{0.168}/\best{0.263} & \best{0.170}/\best{0.265} & \second{0.178}/\second{0.270} & 0.205/0.290 & 0.212/0.300 & 0.192/0.295 \\
-Traffic & 0.438/\second{0.281} & \best{0.414}/\best{0.276} & \second{0.428}/0.282 & 0.481/0.304 & 0.625/0.383 & 0.620/0.336 \\
-Exchange & 0.363/\best{0.405} & 0.367/\second{0.408} & \second{0.360}/\best{0.403} & 0.367/\best{0.404} & \best{0.354}/0.414 & 0.416/0.443 \\
-Solar & \best{0.199}/\best{0.260} & 0.240/\second{0.273} & \second{0.233}/\best{0.262} & 0.270/0.307 & 0.330/0.401 & 0.301/0.319 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\begin{table}[tb]
-\centering
 \caption{\model{} per-horizon results (mean $\pm$ std over three
-seeds), look-back $L{=}96$.}
+seeds), look-back $L{=}96$. Solar uses a test-informed normalization
+setting and is reported only as an exploratory diagnostic result.}
 \label{tab:horizons}
 \scriptsize
 \setlength{\tabcolsep}{3.0pt}
@@ -756,17 +711,17 @@ Solar & MSE & $0.180{\scriptstyle\pm.004}$ & $0.195{\scriptstyle\pm.005}$ & $0.2
 
 \begin{table*}[tb]
 \centering
-\caption{\emph{Unified same-pipeline} comparison (average MSE/MAE over
-$H\in\{96,192,336,720\}$, look-back $L{=}96$; \textbf{five shared seeds};
-lower is better). Every baseline is re-implemented and trained through the
-\emph{identical} pipeline, splits, schedule, and evaluation as \model{}, so
-differences are \emph{paired}. \best{Bold} marks the lowest per-dataset
+\caption{\emph{Unified in-pipeline} comparison (average MSE/MAE over
+$H\in\{96,192,336,720\}$, look-back $L{=}96$; five matched run indices;
+lower is better). Every baseline is re-implemented and evaluated with the
+same splits and protocol as \model{}; model-specific tuning budgets were not
+equalized. \best{Bold} marks the lowest per-dataset
 mean. $^{*}$\,\model{} beats the best competing baseline at
 Benjamini--Hochberg $q{<}0.05$ (paired $t$-test, $n{=}5$;
 \texttt{analyze\_unified\_baselines.py}). \model{} has the lowest mean on
-five of six datasets and the margin is confirmatory on four
+five of six datasets and the corrected test supports the margin on four
 (Electricity, ETTh2, ETTm2, ETTh1); Weather is a statistical tie
-($q{=}0.23$) and PatchTST is confirmed better on ETTm1.}
+($q{=}0.23$) and PatchTST is better on ETTm1.}
 \label{tab:unified}
 \scriptsize
 \setlength{\tabcolsep}{4pt}
@@ -787,18 +742,18 @@ ms-Mamba & 0.459/0.451 & 0.409/0.420 & 0.393/0.403 & 0.288/0.333 & 0.257/0.281 &
 \end{tabular}}
 \end{table*}
 
-Table~\ref{tab:unified} is the paper's primary accuracy evidence, because it
-removes the implementation, split, and seed confounds of cross-paper
-comparison. Under this same-pipeline, five-seed protocol \model{} has the
+\FloatBarrier
+Table~\ref{tab:unified} is the paper's primary accuracy evidence because it
+uses one data and evaluation protocol. Under this five-run protocol \model{} has the
 lowest average MSE on five of the six re-run datasets, and the paired,
-BH-corrected test confirms the margin on \textbf{four}: Electricity
+BH-corrected test supports the margin on \textbf{four}: Electricity
 ($0.168$ vs.\ S-Mamba's $0.183$; $q\!\ll\!0.01$), ETTh2 ($0.376$ vs.\
 iTransformer's $0.383$; $q{=}0.001$), ETTm2 ($0.280$ vs.\ PatchTST's
 $0.284$; $q{=}0.015$), and ETTh1 ($0.439$ vs.\ iTransformer's $0.444$;
 $q{=}0.021$). Weather is a statistical \emph{tie} --- \model{} is numerically
 best ($0.248$ vs.\ PatchTST's $0.249$) but the difference does not survive
-correction ($q{=}0.23$). ETTm1 is an honest \emph{loss}: PatchTST is lower
-($0.381$ vs.\ $0.387$) and the gap is confirmed ($q{<}0.001$), consistent
+correction ($q{=}0.23$). On ETTm1, PatchTST is lower
+($0.381$ vs.\ $0.387$; $q{<}0.001$), consistent
 with the branch matrix, where ETTm1 is carried by the time branch and its
 patch-attention competitor is strong. \model{}'s size is
 dataset-dependent: on the low-channel ETT and Exchange datasets it uses only
@@ -806,19 +761,8 @@ $\approx\,0.1$--$0.25$M parameters (an order of magnitude fewer than the
 variate-attention baselines), whereas on high-channel data the variate mixer
 dominates the count and the model is larger (Table~\ref{tab:efficiency});
 that mixer cost is itself reducible, as the complexity analysis below notes.
-Notably, the confirmatory picture \emph{differs}
-from the earlier quoted table (Table~\ref{tab:main}): the clearest
-same-pipeline wins are Electricity and ETTh2 rather than the quoted
-Solar/ETTh1 headline, and the quoted ETTm1 ``tie'' with PatchTST becomes a
-measured loss --- a direct illustration of why quoted comparison is unsafe.
-
-For the three datasets not yet rerun (Table~\ref{tab:main}, quoted, so
-\emph{indicative only}), \model{}'s largest apparent margin is Solar ($0.199$
-vs.\ iTransformer's $0.233$, with the normalization-free configuration of
-Section~\ref{sec:ablation}); it trails DLinear on Exchange (by $0.009$) and
-S-Mamba on Traffic (by $0.024$), which we \emph{hypothesize} reflects the
-weekly cycle exceeding the look-back. Extending the unified reruns to these
-three is the remaining accuracy experiment.
+These results do not establish a ranking on Solar, Traffic, or Exchange,
+where comparable in-pipeline baselines are unavailable.
 
 \subsection{Component Ablations}
 \label{sec:ablation}
@@ -876,7 +820,8 @@ raw-significant effects have $q\ge 0.11$): at three seeds these are
 \emph{exploratory, directional} findings, not confirmed effects, and we
 report them as such. The consistency of the \emph{direction} (component
 value is dataset-dependent, in both directions) is what motivates
-per-dataset switches; confirming any individual effect requires more seeds.
+per-dataset switches; supporting any individual placement effect requires
+more runs and validation-only configuration selection.
 Zero initialization is a \emph{null} result --- no significant difference on
 either dataset ($-0.0012$ ETTh1, $-0.0046$ Solar; CIs include zero) --- so
 we make no accuracy claim for it, only the interpretable linear start
@@ -899,30 +844,31 @@ corresponding main-table entry, and the Solar $H{=}96$ cell replicates the
 earlier ablation ($+0.0126$ vs.\ $+0.0114$, overlapping CIs). The 27 cells
 yield 54 branch-removal tests; we report both raw significance (CI excludes
 zero, marked $^{*}$ in Table~\ref{tab:branchmatrix}) and BH-corrected
-$q$-values, and treat only the latter as confirmatory.
+$q$-values. A corrected result is treated as statistically supported only
+when its configuration was not chosen using the same test set.
 
 \emph{Frequency branch.} At the raw level, removing it is significant in 5
 cells, concentrated at the shortest horizon: Solar ($+0.0126$), ETTm1
 ($+0.0073$), Electricity ($+0.0019$), and Exchange ($+0.0015$) at $H{=}96$,
 plus ETTm2 at $H{=}336$. After correction, however, only \textbf{Solar at
 $H{=}96$} survives ($q{=}0.048$); the other four fall to $q\ge 0.10$. So
-confirmatory evidence for the frequency branch is limited to a single
-dataset and horizon, and its apparent breadth across four benchmarks is
-\emph{exploratory}.
+the frequency-side result is narrow and, because Solar's normalization
+setting was selected with test feedback, remains \emph{exploratory}.
 
 \emph{Time branch.} Removing it is significant in 14 cells raw and
-\textbf{9 survive BH} ($q{<}0.05$): ETTm1 at \emph{every} horizon
+\textbf{8 survive BH} ($q{<}0.05$): ETTm1 at \emph{every} horizon
 ($+0.017$--$+0.021$, the most persistent effect we measure), ETTm2 at
-$H{=}96$ and $H{=}336$, and Electricity and Exchange at $H{=}96$. The time
-branch is thus robustly necessary on the ETTm family; on ETTh1, ETTh2, and
-Weather no branch effect is detected at \emph{any} horizon, nor on Traffic
-at $H{=}96$.
+$H{=}96$ and $H{=}336$, and Electricity and Exchange at $H{=}96$. The
+time pathway is therefore the only branch with repeated corrected evidence,
+especially on ETTm1. On ETTh1, ETTh2, and Weather no branch effect is
+detected at any horizon; this is absence of detected evidence, not evidence
+that the branches are interchangeable.
 
-The dual-domain benefit is therefore real but sharply conditional --- on
-the dataset \emph{and} the horizon --- and, after multiplicity control, its
-confirmed frequency-side evidence rests on Solar$@$96 alone, with the time
-branch carrying the robust component signal. Elsewhere the unused path is a
-no-cost redundancy behind the convex gate.
+The matrix does not establish a consistent dual-domain advantage. Instead,
+it shows repeated sensitivity to the temporal branch and only a
+test-informed frequency-side effect. A branch with a small fitted gate
+weight remains computationally active, so it should not be described as
+cost-free redundancy.
 
 \begin{table}[tb]
 \centering
@@ -933,7 +879,9 @@ ship with the results). After Benjamini--Hochberg correction over the 54
 tests, 9 survive at $q{<}0.05$ --- eight on the time side (ETTm1 all
 horizons; ETTm2$@$96/336; Electricity$@$96; Exchange$@$96) and, on the
 frequency side, \emph{only} Solar$@$96 ($q{=}0.048$); the remaining
-starred cells are exploratory. Electricity, Traffic, and Exchange were run
+starred cells are exploratory. The Solar result is also exploratory because
+its normalization setting was selected with test feedback. Electricity,
+Traffic, and Exchange were run
 at $H{=}96$ only (---). Full-model means match Table~\ref{tab:horizons}.}
 \label{tab:branchmatrix}
 \scriptsize
@@ -993,43 +941,30 @@ worse held-out error, so the released ETT configurations disable it.
 
 \subsection{Analysis}
 
-\paragraph{Where each domain wins.} The matrix
-(Table~\ref{tab:branchmatrix}) separates three regimes, with the caveat that
-only the BH-surviving cells are confirmatory. Solar is the one dataset where
-the frequency path is confirmed load-bearing at $H{=}96$ ($+0.0126$,
-$q{=}0.048$; removing the time branch is within noise), and even there the
-benefit vanishes at longer horizons --- consistent with Solar's 10-minute
-daily cycle spanning $144{>}L{=}96$ samples, so the spectral path cannot
-observe a complete daily period and its measured advantage comes from
-shorter-scale detail that matters most for near-term steps. On ETTm1,
-Electricity, and Exchange the branches \emph{appear} complementary at
-$H{=}96$, but after correction it is the \emph{time} branch that is
-confirmed (the frequency side is exploratory there), and on ETTm1 the time
-branch stays confirmed at every horizon. On ETTh1, ETTh2, and Weather (all
-four horizons) and Traffic the branches are interchangeable, and the convex
-gate makes carrying the unused path harmless. Which domain a dataset
-needs --- and for how far ahead --- is itself dataset-dependent; but the
-strongest, correction-surviving statement the data support is that the
-\emph{time} branch is broadly necessary while a confirmed \emph{frequency}
-contribution is specific to Solar at short horizons.
+\paragraph{Where branch removals matter.} The matrix
+(Table~\ref{tab:branchmatrix}) shows that the temporal path has the more
+repeatable effect: eight removals survive correction, including every ETTm1
+horizon. The sole corrected frequency-side cell is Solar at $H{=}96$, where
+the 10-minute daily cycle spans $144>L=96$ samples. This periodicity offers
+a plausible hypothesis for the short-horizon effect, but the mechanism is
+not identified by the ablation and the result remains exploratory because
+the Solar configuration used test feedback. On ETTh1, ETTh2, Weather, and
+Traffic, the study does not detect a branch-removal effect under the tested
+settings. Such null results should not be interpreted as equivalence,
+especially at three seeds.
 
-\paragraph{Data correlations predict --- and mislead about --- the mixer.}
-A data-mining reading of the placement finding asks \emph{which measurable
-property of a dataset} decides whether cross-variate capacity pays. Mean
-absolute cross-channel PCC (Table~\ref{tab:datasets}) separates the two
-regimes almost perfectly: the mixer-off ETT family sits at
-$\overline{|r|}\,{=}\,0.31$--$0.35$ (only $14$--$24\%$ of channel pairs
-exceed $|r|{>}0.6$), while the mixer-on Electricity, Traffic, and Solar
-span $0.50$--$0.91$ (Solar's near-total $0.91$ reflects neighboring plants
-sharing irradiance), matching where the paired ablations find the mixer
-load-bearing versus harmful. Exchange is the instructive exception:
-$\overline{|r|}\,{=}\,0.48$, yet the mixer is disabled --- its currency
-series are near random walks whose correlation is co-trending rather than
-exploitable cross-sectional signal, and with only $7.6$K steps the mixer's
-parameters cannot be estimated reliably. Raw correlation is therefore a
-useful \emph{screen}, not a decision rule: high PCC flags candidates for
-cross-variate capacity, but non-stationarity and sample size can inflate
-it, and the seed-paired ablation remains the arbiter.
+\paragraph{Cross-channel correlation as a descriptive covariate.}
+The mixer-off ETT family has
+$\overline{|r|}=0.31$--$0.35$, whereas Electricity, Traffic, and Solar,
+whose released configurations include a mixer, have values of
+$0.50$--$0.91$. This alignment motivates a correlation-to-capacity
+hypothesis, but it does not validate one: Weather lacks a measured PCC,
+Exchange has $\overline{|r|}=0.48$ with the mixer disabled, and the switch
+settings were not generated by a preregistered threshold. Moreover, raw PCC
+can reflect common trends rather than exploitable conditional dependence.
+Accordingly, PCC is reported as a dataset descriptor. A predictive selector
+would require lag-aware and nonlinear dependence measures, validation-only
+threshold selection, and evaluation on held-out datasets.
 
 \paragraph{Complexity accounting.} Table~\ref{tab:efficiency} reports
 model-only, hardware-independent estimates rather than comparative runtime
@@ -1050,10 +985,11 @@ into the size range of the variate-attention baselines. On Traffic this
 reduction is empirically validated: at $H{=}96$ (three seeds) the tied-mixer
 model matches the untied one within noise ($\Delta\mathrm{MSE}=+0.0007$, 95\%
 CI $[-0.003,+0.005]$), whereas placing the mixer in the time branch
-\emph{only} is significantly worse ($+0.0045$, CI excludes zero) --- so both
-domains need cross-variate mixing, but sharing its weights is free. The tied
-configuration ships for Traffic; the same lever applies to Electricity,
-Weather, and Solar ($31$--$45\%$ fewer parameters), left for validation.
+\emph{only} is worse in the three-run estimate ($+0.0045$, unadjusted CI
+excludes zero). Thus, weight tying reduces the measured parameter cost
+without a detected Traffic accuracy loss; it is not evidence of zero cost or
+universal transfer to other datasets. The tied configuration is used for
+Traffic, while Electricity, Weather, and Solar require separate validation.
 Table~\ref{tab:efficiency} reports the widths that produced the accuracy
 numbers above. Wall-clock throughput and matched-baseline runtime remain
 unmeasured.
@@ -1063,7 +999,7 @@ unmeasured.
 \caption{Model-only complexity profile of \model{} per dataset (look-back 96,
 horizon 96, batch~1). GMACs: multiply--accumulates per forecast
 (\texttt{Linear} $+$ \texttt{Conv1d} $+$ the selective-scan recurrence);
-act.\ mem.: forward activation footprint (fp32). All three columns are
+act.\ mem.: forward activation footprint under a 32-bit representation. All three columns are
 hardware-independent estimates; no wall-clock or matched-baseline runtime is
 claimed.}
 \label{tab:efficiency}
@@ -1085,41 +1021,33 @@ Traffic & 862 & 19.70 & 60.2 & 682.7 \\
 \section{Discussion}
 \label{sec:discussion}
 
-\subsection{Practical guidance: which components for which data?}
-The placement evidence condenses into a usable screen. \emph{(i)~Variate
-mixer:} compute the mean absolute cross-channel PCC on the training split;
-values near or above $0.5$ with many channels flag candidates for
-cross-variate capacity (Electricity, Traffic, Solar), while weakly coupled,
-few-channel data (the ETT family) should leave it off --- and co-trending,
-non-stationary series (Exchange) can inflate PCC without exploitable
-structure, so a seed-paired validation ablation should confirm the choice.
-\emph{(ii)~Frequency branch:} its measured value concentrates at short
-horizons and on strongly periodic data; at long horizons the shape-level
-information dominates and the branch becomes a no-cost redundancy behind
-the convex gate. \emph{(iii)~Normalization:} RevIN helps where windows
-carry genuine distribution shift and hurts where apparent nonstationarity
-is itself periodic structure (Solar's night zeros), so it, too, should be
-validated per dataset rather than defaulted.
+\subsection{Data characteristics as validation hypotheses}
+The placement results suggest three hypotheses for future validation, not a
+deployment rule. First, stronger dependence between channels may justify
+testing a variate mixer, but raw PCC ignores lagged and nonlinear structure.
+Second, a spectral path may help when the look-back does not resolve dominant
+periods; the present frequency evidence is based on a test-informed setting
+and does not establish this relationship. Third, normalization may interact
+with changing scale and periodic zeros. Each choice must be selected on
+validation data, frozen before test evaluation, and compared with a fixed
+configuration.
 
 \subsection{Dispersion diagnostics: why normalization is dataset-dependent}
 \label{sec:dispdiag}
-A training-free diagnosis explains the two-sided RevIN result
+A training-free analysis explores the two-sided RevIN result
 (Fig.~\ref{fig:dispersion}). Standardizing each channel and taking a
 rolling standard deviation over the dominant period, all three probed
 datasets carry substantial time-varying scale (coefficient of variation of
 the rolling std $0.20$--$0.48$); a KPSS test rejects stationarity of the
 rolling-std series in every sampled channel, and a Ljung-Box test finds it
-strongly autocorrelated. The scale is therefore non-stationary and
-predictable in \emph{all} cases --- yet normalizing by the input-window
-estimate helps Traffic ($+0.100$ MSE when removed) and hurts Solar
-($-0.029$ when removed): on Solar the window statistics mostly encode the
-night fraction of the window, and de-normalization amplifies errors by an
-unstable standard deviation. The distinction is structural, not
-statistical, which is why we ship normalization as a verified per-dataset
-switch. Forecasting the predictable component of the scale explicitly ---
-an STD-style dispersion path \cite{std} --- is a natural extension that we
-prototype in the released code but do not claim as part of the evaluated
-model.
+strongly autocorrelated. These tests describe nonstationary scale dynamics
+but do not prove forecastability or identify a RevIN mechanism. In the
+measured examples, removing normalization increases Traffic MSE by $0.100$
+and decreases Solar MSE by $0.029$. Periodic night-time zeros provide one
+possible explanation for Solar, but that explanation and the associated
+test-informed effect require validation on untouched data. Explicit
+dispersion forecasting in the style of STD \cite{std} is outside the
+evaluated model.
 
 \begin{figure}[tb]
 \centering
@@ -1130,23 +1058,22 @@ deviation (orange) for Solar, Traffic, and ETTh1. \textbf{(a)}~Coefficient
 of variation of the rolling std. \textbf{(b)}~Measured RevIN effect
 ($\Delta$MSE, off$-$on): normalizing by the input scale helps Traffic but
 hurts Solar. \textbf{(c)}~Fraction of sampled channels whose rolling-std
-series a KPSS test declares non-stationary.}
+series a KPSS test declares non-stationary. These summaries are descriptive;
+the Solar effect uses a test-informed configuration.}
 \label{fig:dispersion}
 \end{figure}
 
 \subsection{Threats to validity}
 Several threats remain, each with the experiment that would resolve it.
 
-\paragraph{Quoted baselines (partly resolved).} Six datasets now have a
-unified, five-seed, same-pipeline comparison against seven baselines
-(Table~\ref{tab:unified}), which carries the paper's confirmatory accuracy
-claims. Three datasets (Solar, Traffic, Exchange) are still quoted from
-\cite{smamba} and should be read as indicative only until they are rerun.
-Two caveats remain even for the unified table: the repo-native S-Mamba and
-ms-Mamba are faithful reimplementations, not the authors' code, and TF4TF
-\cite{tf4tf} is not yet included (no public reference implementation);
-dropping in official code through the provided adapter would further harden
-the comparison.
+\paragraph{Baseline scope and tuning.} The in-pipeline comparison covers
+six datasets and seven baselines. It does not include Solar, Traffic,
+Exchange, Crossformer, or TF4TF, and the S-Mamba/ms-Mamba entries are
+repo-native implementations rather than outputs from the authors' code.
+Moreover, one common schedule does not guarantee equal model-specific
+tuning. The resulting accuracy claim is explicitly restricted to
+Table~\ref{tab:unified}; broader ranking requires official implementations
+or verified adapters and comparable search budgets.
 
 \paragraph{Statistical power and multiplicity.} With $n{=}3$ seeds, tests
 have limited power, and although we apply Benjamini--Hochberg correction,
@@ -1162,8 +1089,9 @@ settings --- most visibly disabling RevIN for Solar --- were decided after
 inspecting test-set ablations and then folded into the reported
 configuration. This is not training-data leakage, but it is selection on the
 test signal, and it can inflate the reported numbers for the affected
-datasets. The clean protocol, which we recommend for the revision, fixes a
-candidate configuration space in advance, selects \emph{every} switch
+datasets. We therefore exclude the Solar frequency result and other
+test-informed placement findings from confirmatory claims. A clean follow-up
+must fix a candidate configuration space in advance, select \emph{every} switch
 (normalization, mixer, spectral map, encoder type) on validation data only,
 freezes the choice before touching the test set, and reports three clearly
 labeled models: a single \emph{fixed} configuration applied everywhere, a
@@ -1172,6 +1100,13 @@ Adding untouched confirmatory datasets (e.g., PEMS03/04/07/08) or previously
 unused temporal test blocks would then verify that the validation-only
 selection logic generalizes rather than having been fit to the existing nine
 benchmarks.
+
+\paragraph{Channel-order sensitivity.} The bidirectional variate mixer is
+non-causal but not permutation-invariant. All results use the canonical
+dataset column order, and no permutation stress test is available.
+Consequently, part of the measured mixer effect may depend on an arbitrary
+ordering. A permutation-equivariant mixer or repeated random-order
+evaluation is needed to resolve this limitation.
 
 \paragraph{Coverage and efficiency.} Electricity, Traffic, and Exchange
 enter the branch matrix at $H{=}96$ only, and the other component ablations
@@ -1189,32 +1124,25 @@ of the evaluated model.
 \model{} is a forecast-decomposable framework built on state-space
 branches --- a DLinear-style temporal backbone, a selective-state-space
 correction, an optional frequency pathway, and a switchable cross-variate
-mixer, each an independently removable component --- which lets us
-\emph{measure} the marginal value of each component rather than claim
-universal superiority. In a unified
-same-pipeline comparison (five shared seeds, so differences are paired),
-\model{} has the lowest average MSE on five of six re-run datasets and, under
-Benjamini--Hochberg correction, significantly beats the best in-pipeline
-baseline on four (Electricity, ETTh2, ETTm2, ETTh1); it ties on Weather and
-is beaten by PatchTST on ETTm1, and three datasets remain quoted-only. This
-is a genuine but bounded accuracy result, not a blanket state-of-the-art
-claim. The framework's further value is the multiplicity-controlled component
-analysis it enables. Under Benjamini--Hochberg correction, all 29
-component-placement effects are exploratory at three seeds (directionally
-consistent but not confirmed), while the branch matrix confirms 9 of 54
-tests: the \emph{time} branch is robustly necessary on the ETTm datasets,
-whereas confirmatory evidence for the \emph{frequency} branch narrows to
-Solar at $H{=}96$. Zero initialization is accuracy-neutral and retained only
-for its interpretable linear starting point. We therefore report
-\emph{bounded, dataset-specific} component findings on the studied
-benchmarks, and explicitly do not claim a general rule for when each
-component helps: the PCC screen is a candidate heuristic, not a validated
-selector. Turning these measurements into such a rule --- a formal,
-pre-registered, validation-only selection mechanism verified to generalize to
-untouched datasets (e.g., PEMS) --- together with the same-pipeline reruns on
-the three still-quoted datasets, an in-pipeline Crossformer comparison, more
-ablation seeds, and matched efficiency measurements, is the path to a fully
-confirmatory submission.
+mixer, each an independently removable component. On the six datasets and
+seven baselines evaluated in one pipeline, it obtains the lowest average MSE
+on five datasets; corrected seed-matched tests support four differences,
+while Weather is tied and PatchTST is better on ETTm1. These results are
+restricted to the implemented comparison and do not establish a broader
+state-of-the-art ranking.
+
+The component study provides a more qualified result. None of the 29
+placement effects survives multiplicity correction at three seeds. Eight of
+54 branch-removal tests support the temporal pathway, with the most
+consistent pattern on ETTm1. The sole corrected frequency-side effect is
+Solar at $H{=}96$, but it is treated as exploratory because the Solar
+normalization switch was selected with test feedback. Zero initialization
+is accuracy-neutral, and PCC and dispersion summaries remain descriptive
+covariates rather than validated selectors. The present evidence therefore
+supports forecast-decomposable analysis and dataset-specific hypotheses. A
+general component-selection rule requires validation-only configuration,
+untouched datasets, stronger baseline coverage, more ablation runs, channel
+permutation tests, and matched efficiency measurements.
 
 
 
@@ -1231,21 +1159,17 @@ reported in this paper.
 
 \section*{Data availability}
 All nine benchmark datasets are publicly available (ETT, Weather, Solar,
-Electricity, Traffic, Exchange). An anonymized reproducibility package is
-provided \emph{at submission} (not withheld until acceptance): it contains
-data-download scripts, exact environment versions and backend information,
-per-dataset configuration snapshots, commit identifiers, the ablation and
-branch-matrix runners, the multiplicity-correction script and its
-per-comparison $p$- and $q$-value outputs, seed-level result files,
-training logs, and the table-generation scripts; model checkpoints are
-included where size permits.
-%% TODO (submission): replace with the anonymized repository URL / DOI.
+Electricity, Traffic, Exchange). Code, configuration files, seed-level
+outputs, statistical-analysis scripts, and training logs will be deposited
+in an anonymized repository for review:
+\textit{[repository URL to be inserted before submission]}.
 
 \section*{Declaration of generative AI in the writing process}
-%% TODO (submission): complete or remove per the journal's current policy.
-During the preparation of this work the authors used generative AI tools to
-assist with language editing and code scaffolding; the authors reviewed and
-edited all content and take full responsibility for it.
+During the preparation of this work the authors used OpenAI ChatGPT to
+assist with language editing, \LaTeX{} revision, and code scaffolding for
+scientific figures. The authors reviewed and verified the manuscript,
+figures, analyses, and citations and take full responsibility for the
+published content.
 
 \section*{Acknowledgements}
 %% TODO (submission): funding sources.
