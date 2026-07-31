@@ -280,17 +280,30 @@ Because this is affine in `x`, de-normalization stays exact by feeding
 other part of the model changes. `a` is sigmoid-parameterized, so it is
 unconstrained in optimization but always in `[0,1]`.
 
+For the `learned`/`channel` modes the initial `a` is clamped into
+`[0.02, 0.98]`. This is not cosmetic: the sigmoid's derivative at `a = 1.0` is
+~1e-4, so initializing at the natural default of 1.0 left the parameter
+effectively **frozen** (measured gradient 6.3e-07). Clamping costs at most a 2%
+deviation from the requested init and makes `a` actually trainable
+(gradient 2.5e+00 at the same setting). `fixed` mode is unclamped, so the
+endpoints stay bit-exact.
+
 Verified:
 - `a = 1` reproduces the original RevIN path **exactly** (max |diff| = 0.0e+00).
 - `a = 0` reproduces `use_revin: false` **exactly** (max |diff| = 0.0e+00).
 - normalize → de-normalize round-trip is exact to float precision (1.9e-06)
   for `a ∈ {0, .25, .5, .75, 1}`.
-- `learned`/`channel` receive gradient and `a` moves during training.
+- `learned`/`channel` receive gradient and `a` moves during training, in
+  **both** directions depending on the data. On a task where the window level
+  predicts the horizon (RevIN's de-normalization already restores it) α rose
+  0.900 → 0.967; on a task where the window scale is noise but the target
+  amplitude is constant (so RevIN's divide-then-remultiply injects that noise)
+  α fell 0.900 → 0.527.
 
-The point is not that α is better in one direction — it is that the strength
-becomes a *training-fitted parameter* instead of a per-dataset switch chosen by
-inspecting a test-set ablation. That removes the selection-bias threat behind
-the Solar `IN = no` setting by construction.
+That bidirectionality is the point: the strength becomes a *training-fitted
+parameter* instead of a per-dataset switch chosen by inspecting a test-set
+ablation, which removes the selection-bias threat behind the Solar `IN = no`
+setting by construction.
 
 ### `fusion` — additive modes (`src/models/fusion.py`)
 
@@ -298,26 +311,40 @@ Three new modes alongside the existing convex ones:
 
 | mode | formula | params added |
 |---|---|---|
-| `residual` | `y = y_time + α·y_freq`, α a scalar, zero-init | 1 |
+| `residual` | `y = y_time + α·y_freq`, α a scalar | 1 |
 | `affine` | `y = g_t·y_time + g_f·y_freq`, two independent gates | ~2·d² |
-| `doubly_residual` | `y = y_time + φ(feat)·y_freq`, φ zero-init MLP | ~d² |
+| `doubly_residual` | `y = y_time + φ(feat)·y_freq`, φ an MLP | ~d² |
 
-All three initialize to **exactly** the time-branch forecast, so the
-initialization story in the manuscript is unchanged (verified: identical loss
-to `time_only` at step 0).
+All three start dominated by the time branch, at `y_time + 0.1·y_freq` — the
+*undiminished* time forecast plus a small frequency term. (`gated` starts at
+`0.9·y_time + 0.1·y_freq`, i.e. it actually shrinks the time branch by 10%.)
+
+**The frequency weight is initialized to 0.1, not 0, and that matters.** With an
+exactly-zero weight, `y = y_time + 0·y_freq` gives `dL/dα ∝ y_freq` and
+`dL/dy_freq = α = 0`. On the datasets whose spectral backbone is enabled —
+where `y_freq` is *also* exactly zero at init — both gradients vanish and the
+frequency branch **never trains at all**. This was caught in testing: with a
+zero init the frequency branch's total gradient was exactly 0.0 while the time
+branch's was 74.0. Initializing at 0.1 (matching the convex modes' initial
+frequency share, `1 − sigmoid(2.2) ≈ 0.0998`) restores gradient flow.
 
 The expressiveness gap is directly demonstrable. Fitting the target
 `y_time + y_freq` (pure superposition) with each rule, 600 Adam steps:
 
-| mode | best MSE |
-|---|---|
-| `gated` (convex) | **0.478** ← cannot represent it |
-| `residual` | 0.000000 |
-| `affine` | 0.000000 |
-| `doubly_residual` | 0.000000 |
+| mode | kind | best MSE |
+|---|---|---|
+| `sum` | convex | 0.485 |
+| `gated` | convex | **0.478** ← cannot represent it |
+| `concat` | convex | 0.172 |
+| `residual` | additive | **0.000000** |
+| `affine` | additive | **0.000000** |
+| `doubly_residual` | additive | 0.002240 |
 
 This is the concrete form of the limitation: a convex rule confines the output
 to the segment between the two branch forecasts, so it cannot emit their sum.
+(`doubly_residual` does not reach exactly zero because its weight is produced
+by an MLP that must learn to emit a constant 1.0; it is expressively capable
+but slower to converge on this synthetic target.)
 
 ### Running the studies
 

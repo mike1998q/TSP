@@ -41,6 +41,11 @@ from .time_branch import TimeBranch
 
 
 class DualDomainForecaster(nn.Module):
+    #: Range the *learned* alpha-RevIN strength is initialized into. The
+    #: sigmoid is effectively flat outside this band, so an init at exactly
+    #: 0 or 1 would freeze the parameter (see __init__).
+    ALPHA_INIT_MIN, ALPHA_INIT_MAX = 0.02, 0.98
+
     def __init__(
         self,
         seq_len: int,
@@ -162,16 +167,23 @@ class DualDomainForecaster(nn.Module):
                 f"Unknown revin_alpha: {revin_alpha!r} (use fixed, learned, channel)"
             )
         self.revin_alpha_mode = revin_alpha
-        a0 = float(min(max(revin_alpha_init, 1e-4), 1 - 1e-4))
-        logit0 = math.log(a0 / (1.0 - a0))          # sigmoid(logit0) == a0
         if revin_alpha == "fixed":
-            self.register_buffer("revin_alpha_logit",
-                                 torch.full((1,), logit0), persistent=False)
+            # Held constant, so the exact requested value is used (and the
+            # endpoints 0.0 / 1.0 are reproduced bit-for-bit).
+            self.register_buffer("revin_alpha_logit", torch.zeros(1),
+                                 persistent=False)
             self._revin_alpha_const = float(revin_alpha_init)
-        elif revin_alpha == "learned":
-            self.revin_alpha_logit = nn.Parameter(torch.full((1,), logit0))
-        else:  # 'channel'
-            self.revin_alpha_logit = nn.Parameter(torch.full((n_channels,), logit0))
+        else:
+            # Learned: the sigmoid saturates near 0 and 1 (at a=1.0 its
+            # derivative is ~1e-4), which would leave alpha effectively frozen
+            # at the default init. Clamp the starting point away from the
+            # saturated region so the parameter can actually move; the cost is
+            # a <=2% deviation from the requested init.
+            a0 = float(min(max(revin_alpha_init, self.ALPHA_INIT_MIN),
+                           self.ALPHA_INIT_MAX))
+            logit0 = math.log(a0 / (1.0 - a0))       # sigmoid(logit0) == a0
+            size = (n_channels,) if revin_alpha == "channel" else (1,)
+            self.revin_alpha_logit = nn.Parameter(torch.full(size, logit0))
 
         self.disp_head = None
         if dispersion == "learned":

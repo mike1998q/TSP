@@ -43,17 +43,30 @@ class ForecastFusion(nn.Module):
     modes: with alpha = (1-g)/g the residual form reproduces any gated output up
     to the overall scale g.
 
-    Initialization: every mode starts at (or very near) the pure time-branch
-    forecast. For the convex modes the gate weights are zeroed and the bias set
-    to +2.2, giving a constant g ~ 0.9; for the additive modes the frequency
-    weight is exactly zero. At init the time branch is an exact linear
-    forecaster while the frequency head may be random (it is zero-initialized
-    only when the spectral backbone is enabled), so an even 0.5/0.5 mix would
-    make half the initial forecast noise, wasting the highest-LR epochs on
-    compensating for it. All weights remain fully learnable.
+    Initialization: every mode starts dominated by the time branch. The convex
+    modes zero the gate weights and set the bias to +2.2, giving a constant
+    g ~ 0.9 (so the initial forecast is ``0.9*y_time + 0.1*y_freq``); the
+    additive modes fix the frequency weight at ``FREQ_INIT_WEIGHT`` = 0.1 (so
+    the initial forecast is ``y_time + 0.1*y_freq``). At init the time branch
+    is an exact linear forecaster while the frequency head may be random (it is
+    zero-initialized only when the spectral backbone is enabled), so an even
+    0.5/0.5 mix would make half the initial forecast noise, wasting the
+    highest-LR epochs on compensating for it. All weights remain learnable.
     """
 
     GATE_BIAS_INIT = 2.2  # sigmoid(2.2) ~ 0.90
+
+    #: Initial weight on the frequency forecast in the additive modes. It must
+    #: be > 0: with an exactly-zero weight, ``y = y_time + 0 * y_freq`` gives
+    #: ``dL/d(weight) proportional to y_freq`` and ``dL/d(y_freq) = weight = 0``,
+    #: so on the datasets whose spectral backbone is enabled (where ``y_freq``
+    #: is also exactly zero at init) *both* gradients vanish and the frequency
+    #: branch never trains. 0.1 matches the convex modes' initial frequency
+    #: share, 1 - sigmoid(2.2) ~ 0.0998. Note the additive modes therefore
+    #: start at ``y_time + 0.1*y_freq``, i.e. the *undiminished* time forecast
+    #: plus a small frequency term -- as opposed to ``gated``, which starts at
+    #: ``0.9*y_time + 0.1*y_freq`` and so shrinks the time branch by 10%.
+    FREQ_INIT_WEIGHT = 0.1
 
     #: modes whose output is a convex combination of the two branch forecasts
     CONVEX_MODES = ("gated", "concat", "sum")
@@ -86,7 +99,8 @@ class ForecastFusion(nn.Module):
             # One global scalar: the smallest possible departure from the
             # convex rule. zero_init=False starts it at 1.0 (equal weight).
             self.alpha = nn.Parameter(
-                torch.zeros(1) if zero_init else torch.ones(1)
+                torch.full((1,), self.FREQ_INIT_WEIGHT) if zero_init
+                else torch.ones(1)
             )
         elif mode == "affine":
             # Two independent gates; both may be large at once.
@@ -97,9 +111,11 @@ class ForecastFusion(nn.Module):
             )
             if zero_init:
                 nn.init.zeros_(self.gate[2].weight)
-                # bias -> (time=1, freq=0): exactly the time-branch forecast.
+                # bias -> (time=1, freq=FREQ_INIT_WEIGHT), matching `gated`.
                 with torch.no_grad():
-                    self.gate[2].bias.copy_(torch.tensor([1.0, 0.0]))
+                    self.gate[2].bias.copy_(
+                        torch.tensor([1.0, self.FREQ_INIT_WEIGHT])
+                    )
         elif mode == "doubly_residual":
             # Data-dependent per-channel weight on the frequency correction.
             self.gate = nn.Sequential(
@@ -109,7 +125,7 @@ class ForecastFusion(nn.Module):
             )
             if zero_init:
                 nn.init.zeros_(self.gate[2].weight)
-                nn.init.zeros_(self.gate[2].bias)
+                nn.init.constant_(self.gate[2].bias, self.FREQ_INIT_WEIGHT)
         elif mode in ("sum", "time_only", "freq_only"):
             pass
         else:
