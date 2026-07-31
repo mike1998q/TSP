@@ -260,6 +260,86 @@ also the source of the paper's most-cited threat to validity.
 
 ---
 
+## Implementation status
+
+Items 1 and 2 of the plan below are **implemented and unit-tested** (CPU only;
+evaluation still needs a GPU).
+
+### `revin_alpha` — α-RevIN (`src/models/dual_domain_model.py`)
+
+New model options `revin_alpha: {fixed, learned, channel}` and
+`revin_alpha_init`. The window is blended rather than switched:
+
+```
+x_norm = a*(x - mu)/sigma + (1 - a)*x  =  s_inv * x - b
+       with s_inv = a/sigma + (1-a),  b = a*mu/sigma
+```
+
+Because this is affine in `x`, de-normalization stays exact by feeding
+`scale = 1/s_inv`, `loc = b*scale` into the existing reconstruction path — no
+other part of the model changes. `a` is sigmoid-parameterized, so it is
+unconstrained in optimization but always in `[0,1]`.
+
+Verified:
+- `a = 1` reproduces the original RevIN path **exactly** (max |diff| = 0.0e+00).
+- `a = 0` reproduces `use_revin: false` **exactly** (max |diff| = 0.0e+00).
+- normalize → de-normalize round-trip is exact to float precision (1.9e-06)
+  for `a ∈ {0, .25, .5, .75, 1}`.
+- `learned`/`channel` receive gradient and `a` moves during training.
+
+The point is not that α is better in one direction — it is that the strength
+becomes a *training-fitted parameter* instead of a per-dataset switch chosen by
+inspecting a test-set ablation. That removes the selection-bias threat behind
+the Solar `IN = no` setting by construction.
+
+### `fusion` — additive modes (`src/models/fusion.py`)
+
+Three new modes alongside the existing convex ones:
+
+| mode | formula | params added |
+|---|---|---|
+| `residual` | `y = y_time + α·y_freq`, α a scalar, zero-init | 1 |
+| `affine` | `y = g_t·y_time + g_f·y_freq`, two independent gates | ~2·d² |
+| `doubly_residual` | `y = y_time + φ(feat)·y_freq`, φ zero-init MLP | ~d² |
+
+All three initialize to **exactly** the time-branch forecast, so the
+initialization story in the manuscript is unchanged (verified: identical loss
+to `time_only` at step 0).
+
+The expressiveness gap is directly demonstrable. Fitting the target
+`y_time + y_freq` (pure superposition) with each rule, 600 Adam steps:
+
+| mode | best MSE |
+|---|---|
+| `gated` (convex) | **0.478** ← cannot represent it |
+| `residual` | 0.000000 |
+| `affine` | 0.000000 |
+| `doubly_residual` | 0.000000 |
+
+This is the concrete form of the limitation: a convex rule confines the output
+to the segment between the two branch forecasts, so it cannot emit their sum.
+
+### Running the studies
+
+`scripts/run_ablation.py` gains two named chains:
+
+```bash
+# Is the frequency branch inert, or just out-competed by the convex rule?
+python scripts/run_ablation.py --config configs/ETTm1.yaml --seeds 5 \
+    --variants full fusion_sum fusion_residual fusion_affine fusion_doubly_residual
+
+# Does a learned normalization strength match the hand-picked switch?
+python scripts/run_ablation.py --config configs/solar.yaml --seeds 5 \
+    --variants full no_revin revin_alpha_learned revin_alpha_channel
+```
+
+Solar is the dataset to run the α-RevIN chain on first: if
+`revin_alpha_learned` matches or beats the hand-picked `IN = no`, the paper can
+drop a test-informed choice and promote the frequency result out of
+"exploratory."
+
+---
+
 ## Suggested order of work
 
 | # | Action | Cost | Why first |

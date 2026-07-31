@@ -29,6 +29,8 @@ Set it to 0 for a strictly channel-independent model.
 """
 from __future__ import annotations
 
+import math
+
 import torch
 import torch.nn as nn
 
@@ -63,6 +65,8 @@ class DualDomainForecaster(nn.Module):
         channel_mixer_layers: int = 1,
         mixer_placement: str = "both",
         use_revin: bool = True,
+        revin_alpha: str = "fixed",
+        revin_alpha_init: float = 1.0,
         time_linear_backbone: bool = True,
         zero_init: bool = True,
         dispersion: str = "none",
@@ -139,6 +143,36 @@ class DualDomainForecaster(nn.Module):
         # Optional learned dispersion head: predicts a positive per-horizon
         # scale from multi-resolution historical statistics (2 features -- mean,
         # std -- per resolution). At init it reduces to RevIN de-normalization.
+        # alpha-RevIN: instead of a hard on/off switch, blend the normalized and
+        # raw window by a factor alpha in [0, 1]:
+        #     x_in = alpha * (x - mu)/sigma + (1 - alpha) * x
+        # and invert consistently on the output. alpha = 1 recovers standard
+        # RevIN, alpha = 0 recovers no normalization, so the binary switch is
+        # the two endpoints of a continuum.
+        #
+        # Why this matters beyond modeling: with revin_alpha='learned' the
+        # normalization strength is fitted on the *training* data, so it no
+        # longer has to be chosen per dataset by inspecting a test-set ablation
+        # (the selection-bias threat behind the Solar 'IN = no' setting).
+        #   'fixed'    -- alpha is a constant (default 1.0 == standard RevIN).
+        #   'learned'  -- one global scalar, sigmoid-parameterized.
+        #   'channel'  -- one scalar per channel (needs n_channels).
+        if revin_alpha not in ("fixed", "learned", "channel"):
+            raise ValueError(
+                f"Unknown revin_alpha: {revin_alpha!r} (use fixed, learned, channel)"
+            )
+        self.revin_alpha_mode = revin_alpha
+        a0 = float(min(max(revin_alpha_init, 1e-4), 1 - 1e-4))
+        logit0 = math.log(a0 / (1.0 - a0))          # sigmoid(logit0) == a0
+        if revin_alpha == "fixed":
+            self.register_buffer("revin_alpha_logit",
+                                 torch.full((1,), logit0), persistent=False)
+            self._revin_alpha_const = float(revin_alpha_init)
+        elif revin_alpha == "learned":
+            self.revin_alpha_logit = nn.Parameter(torch.full((1,), logit0))
+        else:  # 'channel'
+            self.revin_alpha_logit = nn.Parameter(torch.full((n_channels,), logit0))
+
         self.disp_head = None
         if dispersion == "learned":
             stats_dim = 2 * len(dispersion_resolutions)
@@ -163,11 +197,24 @@ class DualDomainForecaster(nn.Module):
 
         ``stats``: (B, S, C) multi-resolution history stats, or None.
         """
-        # Instance normalization (per sample, per channel).
+        # Instance normalization (per sample, per channel), softened by alpha:
+        #     x_norm = a*(x - mu)/sigma + (1 - a)*x
+        #            = s_inv * x - b,   s_inv = a/sigma + (1-a),  b = a*mu/sigma
+        # This is affine in x, so de-normalization stays exact:
+        #     x = (x_norm + b) / s_inv = loc + scale * x_norm
+        # with scale = 1/s_inv and loc = b * scale. Feeding (loc, scale) into
+        # the usual reconstruction path leaves the rest of the model unchanged.
+        # a = 1 gives standard RevIN (scale = sigma, loc = mu); a = 0 gives no
+        # normalization (scale = 1, loc = 0).
         if self.use_revin:
-            mean = x.mean(dim=1, keepdim=True)
-            std = torch.sqrt(x.var(dim=1, keepdim=True, unbiased=False) + 1e-5)
-            x_norm = (x - mean) / std
+            mu_w = x.mean(dim=1, keepdim=True)
+            sigma_w = torch.sqrt(x.var(dim=1, keepdim=True, unbiased=False) + 1e-5)
+            a = self._revin_alpha().view(1, 1, -1)         # (1,1,C) or (1,1,1)
+            s_inv = a / sigma_w + (1.0 - a)
+            b = a * mu_w / sigma_w
+            x_norm = s_inv * x - b
+            std = 1.0 / s_inv                              # scale
+            mean = b * std                                 # loc
         else:
             mean = torch.zeros_like(x[:, :1])
             std = torch.ones_like(x[:, :1])
@@ -189,6 +236,18 @@ class DualDomainForecaster(nn.Module):
             "scale": scale, "loc": loc,
         }
         return out, components
+
+    def _revin_alpha(self) -> torch.Tensor:
+        """Normalization strength in [0, 1] (scalar, or one value per channel)."""
+        if self.revin_alpha_mode == "fixed":
+            return torch.full_like(self.revin_alpha_logit,
+                                   self._revin_alpha_const)
+        return torch.sigmoid(self.revin_alpha_logit)
+
+    @torch.no_grad()
+    def revin_alpha_value(self):
+        """Fitted normalization strength, for logging/reporting."""
+        return self._revin_alpha().detach().cpu()
 
     def _reconstruct(self, mu, sigma, stats):
         """Return (location T_hat, scale D_hat) for de-normalization."""
@@ -245,6 +304,8 @@ def build_model(cfg: dict, n_channels: int):
         channel_mixer_layers=mcfg.get("channel_mixer_layers", 1),
         mixer_placement=mcfg.get("mixer_placement", "both"),
         use_revin=mcfg.get("use_revin", True),
+        revin_alpha=mcfg.get("revin_alpha", "fixed"),
+        revin_alpha_init=mcfg.get("revin_alpha_init", 1.0),
         time_linear_backbone=mcfg.get("time_linear_backbone", True),
         zero_init=mcfg.get("zero_init", True),
         dispersion=mcfg.get("dispersion", "none"),

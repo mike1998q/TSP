@@ -41,9 +41,25 @@ VARIANTS = {
                   {("model", "fusion"): "freq_only"}),
     "fusion_sum": ("plain average instead of the learned gate",
                    {("model", "fusion"): "sum"}),
+    # --- convex vs. additive fusion ---
+    # The gated/concat/sum rules are convex, so the output is confined to the
+    # segment between the two branch forecasts and the branches act as
+    # substitutes. These variants lift that constraint and let them superpose.
+    "fusion_residual": ("additive fusion y = y_time + alpha * y_freq (scalar alpha)",
+                        {("model", "fusion"): "residual"}),
+    "fusion_affine": ("two independent gates (no sum-to-one constraint)",
+                      {("model", "fusion"): "affine"}),
+    "fusion_doubly_residual": ("freq branch fits the time branch's residual",
+                               {("model", "fusion"): "doubly_residual"}),
     # --- normalization & linear anchors ---
     "no_revin": ("no instance normalization (RevIN off)",
                  {("model", "use_revin"): False}),
+    # alpha-RevIN: normalization strength learned from training data instead of
+    # chosen per dataset as an on/off switch (removes a test-informed choice).
+    "revin_alpha_learned": ("alpha-RevIN: one learned global normalization strength",
+                            {("model", "revin_alpha"): "learned"}),
+    "revin_alpha_channel": ("alpha-RevIN: per-channel learned normalization strength",
+                            {("model", "revin_alpha"): "channel"}),
     "no_linear_backbone": ("time branch without its DLinear backbone",
                            {("model", "time_linear_backbone"): False}),
     "rand_init": ("standard random init instead of zero-init heads/gate",
@@ -82,6 +98,21 @@ VARIANTS = {
 # explicit ordered subset: python scripts/run_ablation.py --config ... \
 #     --variants disp_base disp_revin disp_fixed disp_learned --seeds 3
 DISPERSION_CHAIN = ["disp_base", "disp_revin", "disp_fixed", "disp_learned"]
+
+# Convex-vs-additive fusion study: does the frequency branch look inert because
+# spectral modeling does not help here, or because the convex gate forces the
+# branches to compete instead of superpose? Run as an explicit subset:
+#   python scripts/run_ablation.py --config ... --variants full fusion_residual \
+#       fusion_affine fusion_doubly_residual --seeds 5
+FUSION_RULE_CHAIN = ["full", "fusion_sum", "fusion_residual",
+                     "fusion_affine", "fusion_doubly_residual"]
+
+# alpha-RevIN study: replaces the per-dataset on/off RevIN switch (a
+# test-informed choice on Solar) with a strength learned on training data.
+#   python scripts/run_ablation.py --config ... --variants full no_revin \
+#       revin_alpha_learned revin_alpha_channel --seeds 5
+REVIN_ALPHA_CHAIN = ["full", "no_revin", "revin_alpha_learned",
+                     "revin_alpha_channel"]
 
 
 def default_variants(cfg: dict) -> list:

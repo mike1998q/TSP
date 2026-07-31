@@ -53,8 +53,34 @@ model:
   channel_mixer_layers: 1    # >0: BiMamba across the variate dim in each
                              # branch (cross-channel dependencies); 0 = off
   # Fusion
-  fusion: gated              # {gated, sum, concat}
+  fusion: gated              # {gated, sum, concat, residual, affine,
+                             #  doubly_residual, time_only, freq_only}
+                             # CONVEX (gated/sum/concat): y is confined to the
+                             #   segment between the two branch forecasts, so
+                             #   the branches act as substitutes -- they cannot
+                             #   superpose (e.g. trend + spectral peak).
+                             # ADDITIVE (residual/affine/doubly_residual): the
+                             #   branches may superpose. All start at the pure
+                             #   time-branch forecast, so the initialization
+                             #   story is unchanged.
+                             #   residual        y = y_t + alpha * y_f (scalar)
+                             #   affine          y = g_t*y_t + g_f*y_f, no
+                             #                   sum-to-one constraint
+                             #   doubly_residual y = y_t + phi(feat) * y_f
   head_dropout: 0.1
+
+  # Normalization
+  use_revin: true            # instance (RevIN) normalization on/off
+  revin_alpha: fixed         # {fixed, learned, channel} -- alpha-RevIN.
+                             # Blends normalized and raw input:
+                             #   x_norm = a*(x-mu)/sigma + (1-a)*x
+                             # a=1 is standard RevIN, a=0 is no normalization,
+                             # so the on/off switch is the two endpoints of a
+                             # continuum. 'learned'/'channel' fit a on the
+                             # TRAINING data, so normalization strength no
+                             # longer has to be picked per dataset by looking
+                             # at a test-set ablation.
+  revin_alpha_init: 1.0      # initial (or, for 'fixed', the constant) alpha
 
 train:
   device: auto               # {auto, cuda, cpu}
