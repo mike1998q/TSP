@@ -22,7 +22,13 @@ data:
   scale: true
 
 model:
-  d_model: 512
+  d_model: 256               # Parameter-reduced (was 512): the variate mixer
+                             # dominates params and scales with d_model^2, so
+                             # 512->256 cuts the model ~4x. With mixer_placement
+                             # =shared this is ~2.9M (vs ~19.7M at d512+both).
+                             # A smaller width also lowers the activation
+                             # magnitudes that made this dataset overflow under
+                             # fp16 AMP.
   time_kernel_size: 25
   time_dropout: 0.1
   time_encoder: mlp          # S-Mamba recipe: MLP over time, Mamba over variates
@@ -31,27 +37,31 @@ model:
   mamba_d_conv: 4
   mamba_expand: 2
   use_official_mamba: true
-  freq_hidden: 512
+  freq_hidden: 256           # match d_model (reduced from 512)
   freq_dropout: 0.1
   freq_sparsity: 0.0
   freq_encoder: linear
   channel_mixer_layers: 2
+  mixer_placement: shared    # weight-tie one mixer across branches: ~5.3M -> ~2.9M
   fusion: gated
   head_dropout: 0.1
   # Baseline sweeps read these (scripts/run_unified_baselines.py):
-  baseline_d_model: 512
+  baseline_d_model: 256
   baseline_layers: 2
 
 train:
   device: auto
   epochs: 10
   batch_size: 16
-  lr: 0.0005
+  lr: 0.0002                 # lowered from 5e-4 to stop the NaN divergence seen
+                             # on this dataset with the variate mixer.
   weight_decay: 0.0001
   loss: mse
   grad_clip: 5.0
   num_workers: 4
   patience: 5
-  amp: true
+  amp: false                 # DISABLED: fp16 AMP overflowed the variate mixer
+                             # (NaN loss). The Mamba scan already runs in fp32,
+                             # so AMP gave little speedup.
   lr_scheduler: halve
   compile: false

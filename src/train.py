@@ -140,6 +140,8 @@ def train(cfg: dict) -> dict:
             adjust_lr(optimizer, cfg["train"]["lr"], epoch)
         model.train()
         running = 0.0
+        n_batches = 0
+        skipped = 0
         t0 = time.time()
         pbar = tqdm(train_loader, desc=f"epoch {epoch:02d}", leave=False)
         for x, y, stats in pbar:
@@ -148,6 +150,12 @@ def train(cfg: dict) -> dict:
             with torch.autocast(device_type=device.type, enabled=use_amp):
                 out = model(x, stats=stats)
                 loss = loss_fn(out, y)
+            # Skip non-finite batches so a single diverged step cannot poison
+            # the weights (without AMP there is no GradScaler to skip it, and
+            # once the parameters are NaN no lr schedule can recover them).
+            if not torch.isfinite(loss):
+                skipped += 1
+                continue
             scaler_amp.scale(loss).backward()
             if grad_clip and grad_clip > 0:
                 scaler_amp.unscale_(optimizer)
@@ -157,9 +165,13 @@ def train(cfg: dict) -> dict:
             if scheduler is not None:
                 scheduler.step()
             running += loss.item()
+            n_batches += 1
             pbar.set_postfix(loss=f"{loss.item():.4f}")
 
-        train_loss = running / max(1, len(train_loader))
+        if skipped:
+            print(f"[warn] epoch {epoch:02d}: skipped {skipped} non-finite "
+                  f"training batch(es).")
+        train_loss = running / max(1, n_batches)
         val_metrics = evaluate(model, val_loader, loss_fn, device)
         dt = time.time() - t0
         cur_lr = optimizer.param_groups[0]["lr"]

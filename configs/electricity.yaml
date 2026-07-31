@@ -19,11 +19,13 @@ data:
   scale: true
 
 model:
-  d_model: 512               # High-channel capacity setting. Paired with
-                             # mixer_placement=shared below, the model is ~10.6M
-                             # parameters -- about half of the d512+both variant
-                             # (~19.7M). Accuracy comparisons for this budget are
-                             # reported in the manuscript, not selected here.
+  d_model: 256               # Parameter-reduced setting. The variate mixer
+                             # dominates params and scales with d_model^2, so
+                             # 512->256 cuts the model ~4x. Paired with
+                             # mixer_placement=shared below the model is ~2.9M
+                             # (d512+shared was ~10.6M; d512+both ~19.7M).
+                             # Accuracy comparisons for the reported (d512+both)
+                             # budget are in the manuscript, not selected here.
   time_kernel_size: 25
   time_dropout: 0.1
   time_encoder: mlp          # S-Mamba recipe: linear/MLP over time,
@@ -33,15 +35,15 @@ model:
   mamba_d_conv: 4
   mamba_expand: 2
   use_official_mamba: true
-  freq_hidden: 512
+  freq_hidden: 256           # match d_model (reduced from 512)
   freq_dropout: 0.1
   freq_sparsity: 0.0
   freq_encoder: linear
   channel_mixer_layers: 2  # the core of the model on high-channel data
   mixer_placement: shared  # weight-tie one mixer across branches: halves the
-                           # mixer parameters (d512+shared ~10.6M vs d512+both
-                           # ~19.7M). The mixer-placement ablation is reported in
-                           # the manuscript (results/Ablation_electricity_mixer.json).
+                           # mixer parameters (at d256, ~5.3M -> ~2.9M). The
+                           # mixer-placement ablation is reported in the
+                           # manuscript (results/Ablation_electricity_mixer.json).
   fusion: gated
   head_dropout: 0.1
 
