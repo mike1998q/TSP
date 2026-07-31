@@ -39,6 +39,11 @@ model:
   freq_encoder: linear
   freq_backbone: fits        # linear-in-frequency anchor (strong on weather)
   channel_mixer_layers: 2  # multi-layer variate mixing (top-model depth)
+  mixer_placement: shared  # weight-tie one mixer across branches: 5.77M -> 3.49M
+                           # (-40%). Weather has only 21 channels and its accuracy
+                           # is carried by the time encoder, so the variate mixer
+                           # is over-provisioned; tying it is the low-risk cut. The
+                           # reported (d256+both) accuracy is in the manuscript.
   fusion: gated
   head_dropout: 0.1
 

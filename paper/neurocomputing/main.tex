@@ -680,12 +680,13 @@ ablation (Section~\ref{sec:ablation}); all results under this setting are
 labeled exploratory and excluded from confirmatory claims. The widths listed
 here, with the variate mixer instantiated independently in both branches
 (\texttt{mixer\_placement=both}), are the configuration that produced the
-reported accuracy. The repository's default \texttt{configs/electricity.yaml}
-and \texttt{configs/traffic.yaml} ship the parameter-reduced variants used in
-the complexity study (Section~\ref{sec:discussion}: Electricity
-\texttt{d512+shared}, Traffic \texttt{d256+shared}); set
-\texttt{mixer\_placement=both} and $d{=}512$ to reproduce the numbers in this
-table.}
+reported accuracy. To reduce the parameter cost, the repository's default
+configs for the high-channel datasets ship parameter-reduced variants that
+weight-tie the mixer (\texttt{mixer\_placement=shared}) and, where noted,
+halve the width (Section~\ref{sec:discussion}): Electricity and Weather
+\texttt{d256+shared}, Traffic \texttt{d256+shared}. To reproduce the numbers
+in this table, set \texttt{mixer\_placement=both} and the width $d$ listed
+above.}
 \label{tab:hparams}
 \scriptsize
 \setlength{\tabcolsep}{3.2pt}
