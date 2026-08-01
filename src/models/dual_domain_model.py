@@ -65,6 +65,7 @@ class DualDomainForecaster(nn.Module):
         freq_sparsity: float = 0.0,
         freq_encoder: str = "linear",
         freq_backbone: str = "none",
+        freq_zero_init_head: str = "auto",
         fusion: str = "gated",
         head_dropout: float = 0.1,
         channel_mixer_layers: int = 1,
@@ -137,6 +138,7 @@ class DualDomainForecaster(nn.Module):
             use_official_mamba=use_official_mamba,
             channel_mixer_layers=freq_mix,
             zero_init=zero_init,
+            zero_init_head=freq_zero_init_head,
         )
         # Weight-tie the two mixers when sharing (both branches were built with
         # a mixer; point the frequency branch at the time branch's instance).
@@ -311,6 +313,7 @@ def build_model(cfg: dict, n_channels: int):
         freq_sparsity=mcfg.get("freq_sparsity", 0.0),
         freq_encoder=mcfg.get("freq_encoder", "linear"),
         freq_backbone=mcfg.get("freq_backbone", "none"),
+        freq_zero_init_head=mcfg.get("freq_zero_init_head", "auto"),
         fusion=mcfg["fusion"],
         head_dropout=mcfg["head_dropout"],
         channel_mixer_layers=mcfg.get("channel_mixer_layers", 1),

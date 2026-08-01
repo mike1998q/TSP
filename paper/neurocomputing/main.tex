@@ -686,11 +686,12 @@ accuracy-neutral and is used to halve the mixer cost
 (Section~\ref{sec:discussion}). Parameter-reduced variants of these models,
 and the accuracy they cost, are reported separately in
 Table~\ref{tab:capacity}; they are not the configurations behind the results
-tables. $^{\S}$Electricity is the one dataset whose reported numbers were
-produced with the spectral pathway disabled and therefore with a randomly
-initialized frequency head; Section~\ref{sec:discussion} argues this accounts
-for part of its short-horizon deficit, and the released config now enables the
-pathway pending a re-run.}
+tables. $^{\S}$Electricity's reported numbers were produced with the spectral
+pathway disabled and therefore with a randomly initialized frequency head;
+Section~\ref{sec:discussion} argues this accounts for part of its short-horizon
+deficit. Enabling the pathway was tested and made the dataset average worse
+($0.169\rightarrow0.175$, almost entirely at $H{=}720$), so it remains
+disabled.}
 \label{tab:hparams}
 \scriptsize
 \setlength{\tabcolsep}{3.2pt}
@@ -1052,22 +1053,45 @@ $H{=}96$ to $0.200$ at $H{=}720$ --- so the same initialization noise is worth
 $2.4\%$ of the short-horizon budget but only $1.7\%$ of the long-horizon one,
 in the same direction and rough proportion as the observed gap.
 
-We present this as the leading explanation rather than a demonstrated cause:
-the horizon trend is measured over four points, and any quantity monotone in
-$H$ would correlate with it, so the load-bearing evidence is the direct
-measurement plus the Weather/Electricity contrast, not the correlation. Two
-further mechanisms point the same way and are not separated by these data.
-First, the architecture is linear-dominated by construction (zero-initialized
-corrections, $g_0\approx0.9$, and a schedule that halves the learning rate each
-epoch over ten epochs), and a near-linear predictor is relatively stronger at
-long horizons, where forecasts approach seasonal climatology, than at short
-ones, where recoverable local dynamics reward nonlinear capacity. Second, the
-trend/seasonal split uses a moving average of width $25$, which at hourly
-sampling is roughly one day and smooths away precisely the sub-daily detail
-that a $96$-step forecast could still exploit. Separating the three requires a
-spectral-pathway ablation on Electricity, a training-budget sweep, and a
-kernel-width sweep; the first is a one-line configuration change and is the
-experiment we would run first.
+The obvious remedy --- enabling the spectral pathway on Electricity, as
+Weather does --- was tried and \emph{failed}, in an informative way. It left
+$H{=}336$ unchanged and cost $+0.002$ and $+0.001$ at $H{=}96$ and $H{=}192$,
+but degraded $H{=}720$ by $+0.024$ ($0.200\rightarrow0.224$), moving the
+dataset average from $0.169$ to $0.175$. The reason is that the pathway of
+Eq.~\eqref{eq:fits} interpolates the length-$L$ spectrum onto a
+length-$(L{+}H)$ grid, so the map's fan-out grows with the horizon: for
+$L{=}96$ it is $49\rightarrow97$ bins at $H{=}96$ but $49\rightarrow409$ at
+$H{=}720$, an $8.3\times$ extrapolation from the same $49$ measured
+coefficients. The damage tracks that ratio monotonically. Our Electricity
+configuration also applies no spectral low-pass ($\rho{=}0$), whereas the two
+ETT datasets that use this pathway pair it with $\rho\in\{0.3,0.4\}$; the
+cutoff is the regularizer that makes linear-in-frequency forecasting stable,
+and without it the map extrapolates the noisiest high-frequency bins furthest.
+
+This separates two things the ``enable FITS'' intervention conflates. What the
+measurement implicates is the \emph{random initialization of the frequency
+head}, not the absence of a spectral map --- and the head can be silenced on
+its own. We therefore expose the head's initialization as an independent
+switch: it can be zero-initialized whether or not a backbone is present, at no
+parameter cost and without introducing any horizon-dependent extrapolation.
+That is the intervention the evidence supports, and it is the one we would test
+next; the FITS result above stands as a recorded negative.
+
+We present the initialization account as the leading explanation rather than a
+demonstrated cause. The horizon trend is measured over four points, and any
+quantity monotone in $H$ would correlate with it, so the load-bearing evidence
+is the direct measurement plus the Weather/Electricity contrast, not the
+correlation. Two further mechanisms point the same way and are not separated by
+these data. First, the architecture is linear-dominated by construction
+(zero-initialized corrections, $g_0\approx0.9$, and a schedule that halves the
+learning rate each epoch over ten epochs), and a near-linear predictor is
+relatively stronger at long horizons, where forecasts approach seasonal
+climatology, than at short ones, where recoverable local dynamics reward
+nonlinear capacity. Second, the trend/seasonal split uses a moving average of
+width $25$, which at hourly sampling is roughly one day and smooths away
+precisely the sub-daily detail that a $96$-step forecast could still exploit.
+Separating them requires a head-initialization ablation, a training-budget
+sweep, and a kernel-width sweep.
 
 \paragraph{Complexity accounting.} Table~\ref{tab:efficiency} reports
 model-only, hardware-independent estimates rather than comparative runtime

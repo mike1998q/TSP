@@ -70,6 +70,7 @@ class FreqBranch(nn.Module):
         channel_mixer_layers: int = 0,
         backbone: str = "none",
         zero_init: bool = True,
+        zero_init_head: str = "auto",
     ):
         super().__init__()
         self.seq_len = seq_len
@@ -144,10 +145,31 @@ class FreqBranch(nn.Module):
             nn.Dropout(head_dropout),
             nn.Linear(d_model, pred_len),
         )
-        if self.spec_backbone is not None and zero_init:
-            # With a linear backbone present, the deep head becomes a
-            # correction: zero-init so the branch starts as pure-linear
-            # (mirroring the time branch's initialization).
+        # Whether to zero-initialize the forecast head:
+        #   'auto'   -- only when a spectral backbone is present, so the deep
+        #               head acts as a correction to the linear anchor. This is
+        #               the historical behaviour and remains the default, but
+        #               note it leaves the head RANDOM whenever backbone='none',
+        #               so the branch injects noise into the forecast from the
+        #               first step.
+        #   'always' -- zero-init regardless of the backbone. This makes the
+        #               branch silent at initialization *without* introducing
+        #               the FITS spectral map, which is what you want when the
+        #               noise injection is the problem but the map's
+        #               n_freq -> n_out_freq extrapolation is not affordable
+        #               (that ratio grows with the horizon: 2.0x at H=96 but
+        #               8.3x at H=720 for L=96).
+        #   'never'  -- always random-init.
+        if zero_init_head not in ("auto", "always", "never"):
+            raise ValueError(
+                f"Unknown zero_init_head: {zero_init_head!r} "
+                "(use auto, always, never)"
+            )
+        do_zero = zero_init and (
+            zero_init_head == "always"
+            or (zero_init_head == "auto" and self.spec_backbone is not None)
+        )
+        if do_zero:
             nn.init.zeros_(self.head[-1].weight)
             nn.init.zeros_(self.head[-1].bias)
 

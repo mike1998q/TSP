@@ -109,6 +109,64 @@ were made and had to be reverted.
 - `tab:hparams`: Electricity's spectral-map cell carries a footnote recording
   that its reported numbers came from the disabled-pathway configuration.
 
+---
+
+# UPDATE: the FITS remedy was tested and failed
+
+The `freq_backbone: fits` change proposed above was re-run. It made Electricity
+**worse**, and the failure is diagnostic.
+
+| H | before (`none`) | after (`fits`) | Δ | FITS fan-out |
+|---|---|---|---|---|
+| 96 | 0.141 | 0.143 | +0.002 | 49→97 (2.0×) |
+| 192 | 0.159 | 0.160 | +0.001 | 49→145 (3.0×) |
+| 336 | 0.174 | 0.174 | 0.000 | 49→217 (4.4×) |
+| 720 | **0.200** | **0.224** | **+0.024** | 49→409 (**8.3×**) |
+| avg | **0.1685** | **0.1753** | +0.0068 | |
+
+**Cause.** The spectral map interpolates the length-*L* spectrum onto a
+length-(*L*+*H*) grid, so its fan-out grows with the horizon. At H=720 it
+extrapolates 49 measured coefficients to 409 output bins, and the damage tracks
+that ratio monotonically. Compounding it, this config sets `freq_sparsity: 0.0`
+— no low-pass — whereas ETTh1/ETTh2 pair `fits` with ρ ∈ {0.3, 0.4}. The cutoff
+is the regularizer that makes linear-in-frequency forecasting stable; without
+it the map extrapolates the noisiest high-frequency bins the furthest.
+
+**`num_workers` is not implicated.** It was changed 4→2 in the same run, but it
+cannot affect accuracy: `SlidingWindowDataset.__getitem__` is pure indexing with
+no RNG, and shuffling happens in the sampler in the main process. Verified
+directly — the batch stream is bit-identical for `num_workers` ∈ {0, 2, 4}.
+It affects loading throughput only, and 2 is the right setting for memory.
+
+**What was actually wrong with the remedy.** The measurement implicated the
+*random initialization of the frequency head*, not the absence of a spectral
+map. Enabling FITS conflates the two: it silences the head **and** adds an
+expensive, horizon-sensitive extrapolation. Only the first was wanted.
+
+## Correction applied
+
+1. **`configs/electricity.yaml`: `freq_backbone` reverted to `none`.**
+2. **New `freq_zero_init_head: {auto, always, never}` option**
+   (`src/models/freq_branch.py`). `auto` is the historical behaviour and the
+   default, so every existing config is unchanged. `always` zero-initializes
+   the head regardless of backbone — silencing it at init **at zero parameter
+   cost and with no extrapolation**.
+
+   Verified: with `backbone=none`, `zero_init_head=always` gives RMS(y_freq)=0
+   at init versus 0.580 under `auto`, at an identical 10.62M parameters (`fits`
+   was 10.63M *and* carried the extrapolation). The frequency encoder receives
+   no gradient at step 0 and self-heals from step 1, exactly as the time
+   branch's long-standing zero-init head does.
+3. **`configs/electricity.yaml` now sets `freq_zero_init_head: always`**,
+   marked UNVALIDATED — the reported numbers predate it. Re-run all four
+   horizons; revert to `auto` if H=96/192 do not improve.
+4. **New ablation variant `freq_head_zero_init`** so this can be A/B tested
+   properly rather than by flipping a default.
+
+The marking protocol worked as intended here: the change was flagged
+unvalidated, the re-run falsified it, and it has been reverted rather than
+written into the manuscript.
+
 ## Experiments to separate the three mechanisms
 
 1. **Spectral-pathway ablation on Electricity** (one line, already staged):

@@ -68,6 +68,13 @@ VARIANTS = {
                 {("model", "freq_backbone"): "none"}),
     "with_fits": ("add the FITS spectral backbone",
                   {("model", "freq_backbone"): "fits"}),
+    # Separates the two things 'with_fits' conflates: silencing the frequency
+    # head at init, and adding the spectral map. On backbone='none' datasets the
+    # head is randomly initialized and injects noise; this variant silences it
+    # at zero parameter cost and without the map's n_freq -> n_out_freq
+    # extrapolation, whose ratio grows with the horizon.
+    "freq_head_zero_init": ("silence the frequency head at init (no FITS map)",
+                            {("model", "freq_zero_init_head"): "always"}),
     # --- Mamba components ---
     "time_mlp": ("replace the time-axis Mamba encoder with an MLP",
                  {("model", "time_encoder"): "mlp"}),
