@@ -19,13 +19,16 @@ data:
   scale: true
 
 model:
-  d_model: 256               # Parameter-reduced setting. The variate mixer
-                             # dominates params and scales with d_model^2, so
-                             # 512->256 cuts the model ~4x. Paired with
-                             # mixer_placement=shared below the model is ~2.9M
-                             # (d512+shared was ~10.6M; d512+both ~19.7M).
-                             # Accuracy comparisons for the reported (d512+both)
-                             # budget are in the manuscript, not selected here.
+  d_model: 512               # REVERTED from 256. The d256 cut (2.83M) was
+                             # measured to cost +0.0045 avg MSE on this dataset
+                             # (0.1678 -> 0.1722), which flips DD-Mamba from
+                             # beating to losing against published S-Mamba
+                             # (0.170). Electricity has 321 channels and the
+                             # highest cross-channel coupling in the suite, so
+                             # the variate mixer -- whose width scales as
+                             # d_model^2 -- is doing real work here. Paired with
+                             # mixer_placement=shared below this is ~10.6M
+                             # (d512+both is ~19.7M).
   time_kernel_size: 25
   time_dropout: 0.1
   time_encoder: mlp          # S-Mamba recipe: linear/MLP over time,
@@ -35,15 +38,18 @@ model:
   mamba_d_conv: 4
   mamba_expand: 2
   use_official_mamba: true
-  freq_hidden: 256           # match d_model (reduced from 512)
+  freq_hidden: 512           # match d_model (reverted with it)
   freq_dropout: 0.1
   freq_sparsity: 0.0
   freq_encoder: linear
   channel_mixer_layers: 2  # the core of the model on high-channel data
   mixer_placement: shared  # weight-tie one mixer across branches: halves the
-                           # mixer parameters (at d256, ~5.3M -> ~2.9M). The
-                           # mixer-placement ablation is reported in the
-                           # manuscript (results/Ablation_electricity_mixer.json).
+                           # mixer parameters (~19.7M -> ~10.6M at d512). Unlike
+                           # the width cut above, tying was measured
+                           # accuracy-neutral here (dMSE -0.0001, CI includes 0;
+                           # results/Ablation_electricity_mixer.json), so it is
+                           # kept. Sharing the mixer and shrinking it are NOT
+                           # equivalent: only the latter removes capacity.
   fusion: gated
   head_dropout: 0.1
 

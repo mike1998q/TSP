@@ -39,11 +39,14 @@ model:
   freq_encoder: linear
   freq_backbone: fits        # linear-in-frequency anchor (strong on weather)
   channel_mixer_layers: 2  # multi-layer variate mixing (top-model depth)
-  mixer_placement: shared  # weight-tie one mixer across branches: 5.77M -> 3.49M
-                           # (-40%). Weather has only 21 channels and its accuracy
-                           # is carried by the time encoder, so the variate mixer
-                           # is over-provisioned; tying it is the low-risk cut. The
-                           # reported (d256+both) accuracy is in the manuscript.
+  mixer_placement: both    # REVERTED from 'shared'. Tying the mixer (5.77M ->
+                           # 3.49M) was measured to cost +0.0013 avg MSE here
+                           # (0.2485 -> 0.2497), concentrated at H=720
+                           # (0.352 -> 0.356). That is small but it erases the
+                           # Weather margin over PatchTST, which was already a
+                           # statistical tie. Weather's two branches evidently
+                           # want *different* cross-channel mixing, so untied
+                           # mixers are kept. See BOTTLENECK_ANALYSIS.md.
   fusion: gated
   head_dropout: 0.1
 
