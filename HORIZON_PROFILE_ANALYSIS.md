@@ -167,6 +167,80 @@ The marking protocol worked as intended here: the change was flagged
 unvalidated, the re-run falsified it, and it has been reverted rather than
 written into the manuscript.
 
+---
+
+# UPDATE 2: `freq_zero_init_head: always` was also wrong — everything reverted
+
+The second proposed remedy failed too. The reason is structural and I should
+have caught it before proposing it.
+
+**With `freq_backbone: none`, the forecast head is the frequency branch's only
+output pathway.** Zero-initializing it does not merely "silence the noise" — it
+leaves the branch with *no pathway at all*, and the whole head must then grow
+from zero under a schedule that halves the learning rate every epoch across ten
+epochs (≈2–3 epochs of effective learning).
+
+Measured at init:
+
+| `backbone` | head init | RMS(y_freq) | what carries the branch |
+|---|---|---|---|
+| `none` | `auto` (random) | 0.575 | the random head — the only pathway |
+| `none` | `always` (zero) | **0.000** | **nothing** |
+| `fits` | `auto` (zero) | 0.000 | zero head, but the FITS map is the anchor |
+
+So the original `auto` rule was **principled, not an oversight**: zero-init the
+head only when a backbone exists to carry the branch. ETTh1, ETTh2 and Weather
+satisfy that; Electricity does not. My earlier framing of `auto` as an
+inconsistency was wrong.
+
+## Everything is now restored to the last known-good state
+
+`configs/electricity.yaml` is **semantically identical** to the configuration
+that produced 0.140 / 0.157 / 0.174 / 0.200 (avg 0.168): `d_model: 512`,
+`freq_hidden: 512`, `mixer_placement: shared`, `freq_backbone: none`,
+`freq_zero_init_head` left at `auto`. Only comments differ.
+
+### The model code was also audited, and one real defect was found
+
+Several code changes were made this session (alpha-RevIN, additive fusion
+modes, the `zero_init_head` option, a non-finite-batch guard in the training
+loop). All are opt-in, but "opt-in" needed proving, so the current code was
+compared against commit `f0ad576` (pre-session):
+
+- **Forward pass:** bit-identical (output sum, |output| mean, parameter count,
+  parameter sum all match exactly at H=96 and H=720).
+- **Training:** six AdamW steps with pinned dropout initially showed losses
+  differing at the **1e-7** level (e.g. `10.792343140` vs `10.792342186`).
+
+That drift was real. The alpha-RevIN rewrite expressed normalization as
+`s_inv * x - b` instead of `(x - mean) / std` — algebraically identical, but a
+different floating-point rounding path, so the default configuration was no
+longer bit-reproducible against previously reported numbers. A fast path now
+uses the original expression verbatim whenever normalization is exactly
+standard RevIN (`revin_alpha: fixed` with init 1.0, i.e. every shipped config).
+After the fix, all six training steps and both parameter checksums match the
+pre-session baseline **exactly**.
+
+This drift is far too small to explain an MSE regression on its own — it is
+below seed-to-seed variance, and amplifying it just samples the same
+distribution. But it should not have been there, and removing it eliminates one
+variable from any future comparison.
+
+## What went wrong in this sequence
+
+Three unvalidated changes were made to Electricity in a row; two of them hurt
+and the third was unnecessary:
+
+1. `d_model` 512→256 — measured worse (+0.0045), reverted.
+2. `freq_backbone` none→fits — measured worse (+0.0068), reverted.
+3. `freq_zero_init_head` auto→always — structurally unsound, reverted.
+
+The marking protocol ("proposed, not yet validated; revert if it does not
+improve") did its job each time, but proposing a change per round on the same
+dataset was itself the error. Electricity should now be left at the known-good
+configuration, and any further change to it should come from the ablation
+harness with seeds, not from a config edit.
+
 ## Experiments to separate the three mechanisms
 
 1. **Spectral-pathway ablation on Electricity** (one line, already staged):

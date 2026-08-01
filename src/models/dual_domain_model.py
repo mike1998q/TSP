@@ -186,6 +186,10 @@ class DualDomainForecaster(nn.Module):
             logit0 = math.log(a0 / (1.0 - a0))       # sigmoid(logit0) == a0
             size = (n_channels,) if revin_alpha == "channel" else (1,)
             self.revin_alpha_logit = nn.Parameter(torch.full(size, logit0))
+        # True when normalization is exactly standard RevIN, so forward() can
+        # use the original expression verbatim and stay bit-exact.
+        self._revin_is_plain = (revin_alpha == "fixed"
+                                and float(revin_alpha_init) == 1.0)
 
         self.disp_head = None
         if dispersion == "learned":
@@ -220,7 +224,17 @@ class DualDomainForecaster(nn.Module):
         # the usual reconstruction path leaves the rest of the model unchanged.
         # a = 1 gives standard RevIN (scale = sigma, loc = mu); a = 0 gives no
         # normalization (scale = 1, loc = 0).
-        if self.use_revin:
+        if self.use_revin and self._revin_is_plain:
+            # Fast path for the default (alpha fixed at 1.0). The blended form
+            # below is algebraically identical here, but not *bitwise*: it
+            # rearranges the arithmetic, which perturbs results at the 1e-7
+            # level and makes runs non-reproducible against previously reported
+            # numbers. Keep the original expression verbatim so the default
+            # configuration stays bit-exact.
+            mean = x.mean(dim=1, keepdim=True)
+            std = torch.sqrt(x.var(dim=1, keepdim=True, unbiased=False) + 1e-5)
+            x_norm = (x - mean) / std
+        elif self.use_revin:
             mu_w = x.mean(dim=1, keepdim=True)
             sigma_w = torch.sqrt(x.var(dim=1, keepdim=True, unbiased=False) + 1e-5)
             a = self._revin_alpha().view(1, 1, -1)         # (1,1,C) or (1,1,1)
