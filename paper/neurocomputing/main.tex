@@ -686,7 +686,11 @@ accuracy-neutral and is used to halve the mixer cost
 (Section~\ref{sec:discussion}). Parameter-reduced variants of these models,
 and the accuracy they cost, are reported separately in
 Table~\ref{tab:capacity}; they are not the configurations behind the results
-tables.}
+tables. $^{\S}$Electricity is the one dataset whose reported numbers were
+produced with the spectral pathway disabled and therefore with a randomly
+initialized frequency head; Section~\ref{sec:discussion} argues this accounts
+for part of its short-horizon deficit, and the released config now enables the
+pathway pending a re-run.}
 \label{tab:hparams}
 \scriptsize
 \setlength{\tabcolsep}{3.2pt}
@@ -700,7 +704,7 @@ ETTm1 & 128 & Mamba (2) & 0 & 16 & 0 & no & yes & $10^{-4}$ & 32 & 0.1/$10^{-4}$
 ETTm2 & 128 & Mamba (1) & 0 & 16 & 0.2 & no & yes & $10^{-4}$ & 32 & 0.2/$2{\cdot}10^{-4}$ \\
 Weather & 256 & Mamba (2) & 2 & 16 & 0 & yes & yes & $2{\cdot}10^{-4}$ & 32 & 0.1/$10^{-4}$ \\
 Solar & 128 & Mamba (2) & 1 & 16 & 0 & no & no$^{\dagger}$ & $5{\cdot}10^{-4}$ & 16 & 0.1/$10^{-4}$ \\
-Electricity & 512 & MLP & 2 & 32 & 0 & no & yes & $5{\cdot}10^{-4}$ & 16 & 0.1/$10^{-4}$ \\
+Electricity & 512 & MLP & 2 & 32 & 0 & no$^{\S}$ & yes & $5{\cdot}10^{-4}$ & 16 & 0.1/$10^{-4}$ \\
 Traffic & 512 & MLP & 2 & 32 & 0 & no & yes & $10^{-3}$ & 16 & 0.1/$10^{-4}$ \\
 Exchange & 64 & Mamba (1) & 0 & 8 & 0.5 & no & yes & $10^{-4}$ & 32 & 0.3/$5{\cdot}10^{-4}$ \\
 \bottomrule
@@ -718,9 +722,10 @@ normalization setting and is reported only as an exploratory diagnostic
 result. Values are point estimates from this run; the seed-level dispersion
 quoted elsewhere in the paper comes from the three-seed study of the same
 configurations, whose per-horizon means agree with these to within
-$\pm0.003$ MSE on every dataset. $^{\ddagger}$Electricity and Weather are
-reported at the capacity Table~\ref{tab:hparams} lists; Table~\ref{tab:capacity}
-gives the separately measured cost of their parameter-reduced variants.}
+$\pm0.003$ MSE on every dataset. Electricity and Weather were re-run at the
+capacity Table~\ref{tab:hparams} lists after the reduction study;
+Table~\ref{tab:capacity} gives the separately measured cost of their
+parameter-reduced variants.}
 \label{tab:horizons}
 \scriptsize
 \setlength{\tabcolsep}{3.0pt}
@@ -736,10 +741,10 @@ ETTm1 & MSE & $0.321$ & $0.366$ & $0.396$ & $0.461$ & 0.386 \\
  & MAE & $0.359$ & $0.385$ & $0.405$ & $0.443$ & 0.398 \\
 ETTm2 & MSE & $0.177$ & $0.241$ & $0.302$ & $0.398$ & 0.280 \\
  & MAE & $0.260$ & $0.302$ & $0.341$ & $0.397$ & 0.325 \\
-Weather$^{\ddagger}$ & MSE & $0.162$ & $0.212$ & $0.269$ & $0.352$ & 0.248 \\
- & MAE & $0.207$ & $0.255$ & $0.295$ & $0.349$ & 0.276 \\
-Electricity$^{\ddagger}$ & MSE & $0.140$ & $0.157$ & $0.174$ & $0.200$ & 0.168 \\
- & MAE & $0.235$ & $0.252$ & $0.271$ & $0.296$ & 0.263 \\
+Weather & MSE & $0.162$ & $0.212$ & $0.267$ & $0.349$ & 0.247 \\
+ & MAE & $0.207$ & $0.254$ & $0.293$ & $0.347$ & 0.275 \\
+Electricity & MSE & $0.141$ & $0.159$ & $0.174$ & $0.200$ & 0.169 \\
+ & MAE & $0.236$ & $0.253$ & $0.270$ & $0.296$ & 0.264 \\
 Traffic & MSE & $0.401$ & $0.423$ & $0.441$ & $0.481$ & 0.437 \\
  & MAE & $0.268$ & $0.276$ & $0.284$ & $0.303$ & 0.283 \\
 Exchange & MSE & $0.086$ & $0.179$ & $0.329$ & $0.858$ & 0.363 \\
@@ -1022,6 +1027,47 @@ can reflect common trends rather than exploitable conditional dependence.
 Accordingly, PCC is reported as a dataset descriptor. A predictive selector
 would require lag-aware and nonlinear dependence measures, validation-only
 threshold selection, and evaluation on held-out datasets.
+
+\paragraph{The error profile is horizon-dependent, and initialization explains
+part of it.} On Electricity the margin against the strongest published
+competitor varies monotonically with the horizon: relative to the S-Mamba
+average, \model{} is $+1.4\%$ worse at $H{=}96$, level at $H{=}192$, then
+$1.1\%$ and $2.0\%$ better at $H{=}336$ and $H{=}720$. Weather shows no such
+deficit and is ahead at every horizon. The two datasets differ in a way that
+predicts exactly this: Weather enables the FITS spectral pathway of
+Eq.~\eqref{eq:fits} and Electricity does not, and as noted in
+Section~\ref{sec:freq} the frequency forecast head is zero-initialized
+\emph{only} when that pathway is present. Electricity therefore begins
+training with a randomly initialized frequency head whose output enters the
+forecast at the gate's initial weight $1-g_0\approx0.1$.
+
+We measured that contribution directly. In the normalized space the untrained
+frequency branch of the Electricity configuration emits a signal of
+RMS~$\approx0.58$, so the injected perturbation is $\approx0.058$~RMS, and it
+is essentially \emph{constant across horizons} ($0.058$, $0.057$, $0.058$,
+$0.057$ at $H{=}96,192,336,720$); with the spectral pathway enabled it is
+exactly zero. A horizon-independent perturbation consumes a larger share of a
+smaller error budget, and the achievable error here grows from $0.141$ at
+$H{=}96$ to $0.200$ at $H{=}720$ --- so the same initialization noise is worth
+$2.4\%$ of the short-horizon budget but only $1.7\%$ of the long-horizon one,
+in the same direction and rough proportion as the observed gap.
+
+We present this as the leading explanation rather than a demonstrated cause:
+the horizon trend is measured over four points, and any quantity monotone in
+$H$ would correlate with it, so the load-bearing evidence is the direct
+measurement plus the Weather/Electricity contrast, not the correlation. Two
+further mechanisms point the same way and are not separated by these data.
+First, the architecture is linear-dominated by construction (zero-initialized
+corrections, $g_0\approx0.9$, and a schedule that halves the learning rate each
+epoch over ten epochs), and a near-linear predictor is relatively stronger at
+long horizons, where forecasts approach seasonal climatology, than at short
+ones, where recoverable local dynamics reward nonlinear capacity. Second, the
+trend/seasonal split uses a moving average of width $25$, which at hourly
+sampling is roughly one day and smooths away precisely the sub-daily detail
+that a $96$-step forecast could still exploit. Separating the three requires a
+spectral-pathway ablation on Electricity, a training-budget sweep, and a
+kernel-width sweep; the first is a one-line configuration change and is the
+experiment we would run first.
 
 \paragraph{Complexity accounting.} Table~\ref{tab:efficiency} reports
 model-only, hardware-independent estimates rather than comparative runtime

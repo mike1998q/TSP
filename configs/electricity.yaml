@@ -42,6 +42,22 @@ model:
   freq_dropout: 0.1
   freq_sparsity: 0.0
   freq_encoder: linear
+  # PROPOSED CHANGE -- NOT YET VALIDATED. The reported Electricity numbers
+  # (0.141/0.159/0.174/0.200) were produced with freq_backbone: none.
+  #
+  # Rationale: the frequency forecast head is zero-initialized ONLY when a
+  # spectral backbone is present (src/models/freq_branch.py:147). With
+  # 'none' the head starts RANDOM and injects a measured ~0.058 RMS
+  # perturbation into the normalized forecast at the gate's initial 0.1
+  # weight -- roughly constant across horizons, so it costs a larger share of
+  # the smaller short-horizon error budget. That matches the observed profile:
+  # we trail S-Mamba by 1.4% at H=96 but lead by 2.0% at H=720. Weather,
+  # which sets fits, shows no short-horizon deficit.
+  #
+  # Re-run all four horizons before reporting. If H=96/192 do not improve,
+  # revert this line to 'none' -- do not update the manuscript numbers from a
+  # config that has not been re-measured.
+  freq_backbone: fits
   channel_mixer_layers: 2  # the core of the model on high-channel data
   mixer_placement: shared  # weight-tie one mixer across branches: halves the
                            # mixer parameters (~19.7M -> ~10.6M at d512). Unlike
