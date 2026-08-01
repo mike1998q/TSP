@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import time
 
@@ -44,13 +45,38 @@ def get_loss_fn(name: str) -> nn.Module:
 
 def build_scheduler(optimizer, cfg, steps_per_epoch):
     """Per-batch schedulers. The 'halve' schedule is applied per-epoch in the
-    training loop instead (see adjust_lr), so it returns None here."""
+    training loop instead (see adjust_lr), so it returns None here.
+
+    A note on 'halve'. Because it sets lr = base * 0.5^(epoch-1), the total
+    learning budget is the geometric series sum(0.5^k) = 2*base -- *bounded no
+    matter how many epochs are run*. epochs=10 and epochs=100 deliver the same
+    budget, and only about four epochs ever run above 10% of the base rate.
+    That is fine for a model that starts near its solution, but this one
+    zero-initializes its deep corrections and needs them to grow. Prefer
+    'cosine' or 'cosine_warmup' when the training curves show the loss still
+    falling at the last epoch.
+    """
     kind = cfg["train"].get("lr_scheduler", "none")
     epochs = cfg["train"]["epochs"]
+    total = max(1, epochs * steps_per_epoch)
     if kind == "cosine":
-        return torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=max(1, epochs * steps_per_epoch)
-        )
+        return torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total)
+    if kind == "cosine_warmup":
+        # Linear warmup then cosine decay, both per batch. Warmup matters when
+        # the effective learning rate is raised: the variate mixer on
+        # high-channel data is the part that destabilizes first.
+        warm_epochs = float(cfg["train"].get("warmup_epochs", 1.0))
+        warm = max(1, int(round(warm_epochs * steps_per_epoch)))
+        floor = float(cfg["train"].get("lr_min_frac", 0.0))
+
+        def factor(step: int) -> float:
+            if step < warm:
+                return (step + 1) / warm
+            prog = (step - warm) / max(1, total - warm)
+            cosine = 0.5 * (1.0 + math.cos(math.pi * min(1.0, prog)))
+            return floor + (1.0 - floor) * cosine
+
+        return torch.optim.lr_scheduler.LambdaLR(optimizer, factor)
     if kind == "step":
         return torch.optim.lr_scheduler.StepLR(
             optimizer, step_size=max(1, epochs // 3), gamma=0.5
@@ -134,6 +160,7 @@ def train(cfg: dict) -> dict:
     bad_epochs = 0
 
     halve = cfg["train"].get("lr_scheduler") == "halve"
+    train_hist, val_hist = [], []
 
     for epoch in range(1, cfg["train"]["epochs"] + 1):
         if halve:
@@ -173,6 +200,8 @@ def train(cfg: dict) -> dict:
                   f"training batch(es).")
         train_loss = running / max(1, n_batches)
         val_metrics = evaluate(model, val_loader, loss_fn, device)
+        train_hist.append(train_loss)
+        val_hist.append(val_metrics["loss"])
         dt = time.time() - t0
         cur_lr = optimizer.param_groups[0]["lr"]
         print(
@@ -206,6 +235,31 @@ def train(cfg: dict) -> dict:
             if bad_epochs >= patience:
                 print(f"[early-stop] no val improvement for {patience} epochs.")
                 break
+
+    # Convergence diagnostic. A run whose *training* loss is still falling when
+    # it stops was budget-limited, not converged -- the usual cause is a
+    # schedule that drove the learning rate to zero while there was still
+    # signal to fit. Distinguish that from genuine overfitting, where the
+    # validation loss turned up early while training loss kept dropping.
+    if len(train_hist) >= 3:
+        still_falling = train_hist[-1] < train_hist[-2] < train_hist[-3]
+        best_epoch = int(np.argmin(val_hist)) + 1
+        ran = len(val_hist)
+        lr_frac = optimizer.param_groups[0]["lr"] / cfg["train"]["lr"]
+        if still_falling and lr_frac < 0.05 and best_epoch >= ran - 1:
+            print(
+                f"[diag] train loss was still decreasing at epoch {ran} with lr "
+                f"at {lr_frac:.1%} of base: this run was UNDERTRAINED, not "
+                f"converged. Consider train.lr_scheduler: cosine_warmup with "
+                f"more epochs ('halve' caps the total budget at 2x base lr no "
+                f"matter how many epochs are run)."
+            )
+        elif best_epoch <= max(2, ran // 3) and still_falling:
+            print(
+                f"[diag] best validation was epoch {best_epoch} of {ran} while "
+                f"train loss kept falling: this run OVERFIT. Consider more "
+                f"regularization (dropout/weight decay) rather than more epochs."
+            )
 
     # Final test evaluation on the best checkpoint.
     if os.path.exists(best_path):

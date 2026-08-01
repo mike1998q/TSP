@@ -94,6 +94,20 @@ train:
   patience: 10               # early-stopping patience (epochs)
   min_delta: 0.0             # min val-loss improvement to reset patience
   amp: true                  # mixed precision (recommended on RTX 5090)
-  lr_scheduler: cosine       # {none, cosine, step, halve}
+  lr_scheduler: cosine       # {none, cosine, cosine_warmup, step, halve}
+                             # WARNING on 'halve' (lr = base * 0.5^(epoch-1)):
+                             # the total learning budget is the geometric
+                             # series sum(0.5^k) = 2*base, i.e. BOUNDED no
+                             # matter how many epochs run. epochs=10 and
+                             # epochs=100 give the same budget, and only ~4
+                             # epochs exceed 10% of the base rate. If the
+                             # training loss is still falling at the last
+                             # epoch, the run was budget-limited rather than
+                             # converged -- use cosine_warmup with more epochs.
+                             # The dataset configs still use 'halve' because
+                             # the reported numbers were measured with it; see
+                             # scripts/run_schedule_sweep.py.
+  # warmup_epochs: 1.0       # cosine_warmup only: linear warmup length
+  # lr_min_frac: 0.0         # cosine_warmup only: final lr as a fraction of base
                              #   halve: lr *= 0.5 per epoch (standard on ETT)
   compile: false             # torch.compile (supported on torch 2.11+cu130; opt-in)

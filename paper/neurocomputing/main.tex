@@ -1264,6 +1264,34 @@ tuning. The resulting accuracy claim is explicitly restricted to
 Table~\ref{tab:unified}; broader ranking requires official implementations
 or verified adapters and comparable search budgets.
 
+\paragraph{The optimization budget is bounded, and the models are not
+converged.} Our schedule sets $\mathrm{lr}=\mathrm{base}\cdot 0.5^{(e-1)}$.
+Summed over epochs this is a geometric series, so the total budget is
+$\sum_e 0.5^{e-1}=2\cdot\mathrm{base}$ \emph{regardless of the epoch count}:
+training for ten epochs and for a hundred delivers an identical budget, and
+only about four epochs ever run above $10\%$ of the base rate. Inspection of
+the Electricity training curves shows this is not hypothetical. Training loss
+is still decreasing at the final epoch at every horizon, and at $H{=}96$ the
+validation loss is pinned to $0.1191$ for four consecutive epochs --- the
+signature of parameters that have stopped moving, not of a converged optimum.
+The short horizons are therefore \emph{undertrained}. The longest horizon has
+the opposite pathology: at $H{=}720$ the best validation loss occurs at epoch
+two and degrades monotonically thereafter while training loss continues to
+fall, which is ordinary overfitting and needs regularization rather than
+budget. One schedule is serving two regimes and suits neither.
+
+This qualifies the component results directly. A branch or mixer that is
+zero-initialized must \emph{grow} its contribution, and it is given the
+smallest learning-rate budget in which to do so, so the finding that no
+component effect survives correction may reflect the recipe rather than the
+components. We flag this rather than repair it because the schedule is shared
+by every dataset and horizon in the paper: changing it invalidates all reported
+numbers at once and requires a full re-run. The experiment that settles it is
+implemented as \texttt{scripts/run\_schedule\_sweep.py}, which compares the
+current schedule against warmup-plus-cosine at a larger budget; the training
+loop now also emits an explicit undertrained/overfit diagnostic at the end of
+each run so the condition is visible without reading curves by hand.
+
 \paragraph{Statistical power and multiplicity.} With $n{=}3$ seeds, tests
 have limited power, and although we apply Benjamini--Hochberg correction,
 all 29 component-placement effects fall to $q\ge0.11$: those results are
