@@ -1,8 +1,11 @@
 # PEMS07 — traffic flow, 5-min sampling (883 sensor channels).
 # Confirmatory dataset (review request): NOT used to tune DD-Mamba's design.
 # Protocol: 0.6/0.2/0.2 chronological split (iTransformer/S-Mamba), seq_len 96,
-# horizons {96,192,336,720}. Provide the standard PEMS07.npz (key 'data',
-# shape (T, N, F); feature 0 = flow) at the csv_path below.
+# horizons {12, 24, 48, 96} -- the standard PEMS forecasting horizons, which
+# are SHORTER than the {96,192,336,720} used on the other benchmarks because
+# PEMS is sampled every 5 minutes (96 steps = 8 hours, not 4 days).
+# Provide the standard PEMS07.npz (key 'data', shape (T, N, F); feature 0 =
+# flow) at the csv_path below.
 
 experiment:
   name: pems07
@@ -15,8 +18,8 @@ data:
   npz_key: data
   npz_feature: 0            # 0 = traffic flow
   target_columns: null
-  seq_len: 96
-  pred_len: 96
+  seq_len: 96              # look-back stays 96 (8 hours at 5-min sampling)
+  pred_len: 12             # sweep {12, 24, 48, 96} via --data.pred_len
   train_ratio: 0.6
   val_ratio: 0.2
   scale: true
