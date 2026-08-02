@@ -95,18 +95,20 @@ train:
   min_delta: 0.0             # min val-loss improvement to reset patience
   amp: true                  # mixed precision (recommended on RTX 5090)
   lr_scheduler: cosine       # {none, cosine, cosine_warmup, step, halve}
-                             # WARNING on 'halve' (lr = base * 0.5^(epoch-1)):
-                             # the total learning budget is the geometric
-                             # series sum(0.5^k) = 2*base, i.e. BOUNDED no
-                             # matter how many epochs run. epochs=10 and
-                             # epochs=100 give the same budget, and only ~4
-                             # epochs exceed 10% of the base rate. If the
-                             # training loss is still falling at the last
-                             # epoch, the run was budget-limited rather than
-                             # converged -- use cosine_warmup with more epochs.
-                             # The dataset configs still use 'halve' because
-                             # the reported numbers were measured with it; see
-                             # scripts/run_schedule_sweep.py.
+                             # NOTE on 'halve' (lr = base * 0.5^(epoch-1)): the
+                             # total learning budget is the geometric series
+                             # sum(0.5^k) = 2*base, i.e. BOUNDED no matter how
+                             # many epochs run, and only ~4 epochs exceed 10%
+                             # of the base rate. That looks like undertraining
+                             # -- train loss is still falling at the last epoch
+                             # -- but it was TESTED and it is not. On
+                             # electricity, cosine_warmup over 30 epochs (~5x
+                             # the budget) cut TRAIN loss by 16-31% with no
+                             # test gain at any horizon (avg 0.169 -> 0.171):
+                             # results/schedule_sweep_electricity.json. The
+                             # aggressive decay acts as an implicit regularizer;
+                             # the limit is generalization, not optimization.
+                             # Keep 'halve' unless a sweep says otherwise.
   # warmup_epochs: 1.0       # cosine_warmup only: linear warmup length
   # lr_min_frac: 0.0         # cosine_warmup only: final lr as a fraction of base
                              #   halve: lr *= 0.5 per epoch (standard on ETT)

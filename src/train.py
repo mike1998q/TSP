@@ -51,10 +51,17 @@ def build_scheduler(optimizer, cfg, steps_per_epoch):
     learning budget is the geometric series sum(0.5^k) = 2*base -- *bounded no
     matter how many epochs are run*. epochs=10 and epochs=100 deliver the same
     budget, and only about four epochs ever run above 10% of the base rate.
-    That is fine for a model that starts near its solution, but this one
-    zero-initializes its deep corrections and needs them to grow. Prefer
-    'cosine' or 'cosine_warmup' when the training curves show the loss still
-    falling at the last epoch.
+
+    That reads like undertraining, and on electricity the training loss is
+    indeed still falling at the final epoch. It was tested anyway
+    (scripts/run_schedule_sweep.py) and the reading is wrong: cosine_warmup
+    over 30 epochs, roughly 5x the integrated learning rate, lowered TRAIN loss
+    by 16-31% while test error did not improve at any horizon (dataset average
+    0.169 -> 0.171). The model can already fit the training distribution harder
+    than it generalizes, so the sharp decay is acting as an implicit
+    regularizer rather than starving the fit. Prefer 'halve' unless a sweep on
+    your dataset says otherwise; a training loss that is still falling is by
+    itself NOT evidence that a larger budget will help.
     """
     kind = cfg["train"].get("lr_scheduler", "none")
     epochs = cfg["train"]["epochs"]
