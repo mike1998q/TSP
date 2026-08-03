@@ -270,6 +270,143 @@ class BiMambaEncoder(nn.Module):
         return self.norm(x)
 
 
+class UniMambaEncoder(nn.Module):
+    """Forward-scan-only counterpart of :class:`BiMambaEncoder`.
+
+    Same block recipe (mix -> FFN -> norm) and same interface, but a single
+    direction. Exists so the bidirectional choice can be ablated rather than
+    assumed: S-Mamba (Wang et al., Neurocomputing 2025, Tab. 5) reports
+    uni-Mamba as a distinct arm because a unidirectional scan sees only one
+    side of a sequence that has no arrow of time, and over the variate axis
+    that is an arbitrary restriction.
+    """
+
+    def __init__(
+        self,
+        d_model: int,
+        n_layers: int = 2,
+        d_state: int = 16,
+        d_conv: int = 4,
+        expand: int = 2,
+        dt_rank: Optional[int] = None,
+        use_official: bool = True,
+        ffn_dropout: float = 0.0,
+    ):
+        super().__init__()
+        self.layers = nn.ModuleList(
+            [
+                MambaLayer(
+                    d_model=d_model, d_state=d_state, d_conv=d_conv,
+                    expand=expand, dt_rank=dt_rank, use_official=use_official,
+                )
+                for _ in range(n_layers)
+            ]
+        )
+        self.ffn_norms = nn.ModuleList([RMSNorm(d_model) for _ in range(n_layers)])
+        self.ffns = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.Linear(d_model, 2 * d_model),
+                    nn.GELU(),
+                    nn.Dropout(ffn_dropout),
+                    nn.Linear(2 * d_model, d_model),
+                )
+                for _ in range(n_layers)
+            ]
+        )
+        self.norm = RMSNorm(d_model)
+
+    @property
+    def using_official_kernels(self) -> bool:
+        return any(l.using_official_kernels for l in self.layers)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        for layer, ffn_norm, ffn in zip(self.layers, self.ffn_norms, self.ffns):
+            x = layer(x)
+            x = x + ffn(ffn_norm(x))
+        return self.norm(x)
+
+
+class AttentionEncoder(nn.Module):
+    """Multi-head self-attention encoder, interface-compatible with
+    :class:`BiMambaEncoder`.
+
+    This is the alternative S-Mamba benchmarks its variate-correlation block
+    against (their Tab. 5 replaces bi-Mamba with Attention), and the mechanism
+    iTransformer uses over the variate axis. Providing it here means the
+    "selective state space beats attention for cross-variate mixing" claim can
+    be measured in our own pipeline instead of inherited from theirs.
+
+    Attention over the variate axis is quadratic in the number of channels,
+    which is the cost Mamba is meant to avoid; on the 862-883 channel datasets
+    that difference is the point of the comparison.
+    """
+
+    def __init__(
+        self,
+        d_model: int,
+        n_layers: int = 2,
+        n_heads: int = 8,
+        ffn_dropout: float = 0.0,
+        attn_dropout: float = 0.0,
+        **_ignored,
+    ):
+        super().__init__()
+        # d_model must divide evenly into heads; fall back to fewer heads.
+        while n_heads > 1 and d_model % n_heads != 0:
+            n_heads //= 2
+        self.attn_norms = nn.ModuleList([RMSNorm(d_model) for _ in range(n_layers)])
+        self.attns = nn.ModuleList(
+            [
+                nn.MultiheadAttention(d_model, n_heads, dropout=attn_dropout,
+                                      batch_first=True)
+                for _ in range(n_layers)
+            ]
+        )
+        self.ffn_norms = nn.ModuleList([RMSNorm(d_model) for _ in range(n_layers)])
+        self.ffns = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.Linear(d_model, 2 * d_model),
+                    nn.GELU(),
+                    nn.Dropout(ffn_dropout),
+                    nn.Linear(2 * d_model, d_model),
+                )
+                for _ in range(n_layers)
+            ]
+        )
+        self.norm = RMSNorm(d_model)
+
+    @property
+    def using_official_kernels(self) -> bool:
+        return False
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        for anorm, attn, fnorm, ffn in zip(
+            self.attn_norms, self.attns, self.ffn_norms, self.ffns
+        ):
+            h = anorm(x)
+            x = x + attn(h, h, h, need_weights=False)[0]
+            x = x + ffn(fnorm(x))
+        return self.norm(x)
+
+
+def build_variate_encoder(kind: str, **kw):
+    """Factory for the cross-variate mixer, so it can be ablated by name.
+
+    'bimamba' is the default and reproduces the previous behaviour exactly.
+    """
+    if kind == "bimamba":
+        return BiMambaEncoder(**kw)
+    if kind == "unimamba":
+        return UniMambaEncoder(**kw)
+    if kind == "attention":
+        return AttentionEncoder(**kw)
+    raise ValueError(
+        f"Unknown variate encoder: {kind!r} (use bimamba, unimamba, attention)"
+    )
+
+
 class MambaEncoder(nn.Module):
     """A stack of :class:`MambaLayer` blocks with a final norm."""
 

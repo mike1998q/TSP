@@ -23,7 +23,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from .mamba_block import BiMambaEncoder, MambaEncoder
+from .mamba_block import BiMambaEncoder, MambaEncoder, build_variate_encoder
 
 
 class MovingAvg(nn.Module):
@@ -91,6 +91,7 @@ class TimeBranch(nn.Module):
         channel_mixer_layers: int = 0,
         use_linear_backbone: bool = True,
         zero_init: bool = True,
+        mixer_kind: str = "bimamba",
     ):
         super().__init__()
         self.encoder_kind = encoder
@@ -112,7 +113,8 @@ class TimeBranch(nn.Module):
         # Channel-independent models leave this accuracy on the table on
         # multivariate benchmarks (electricity, traffic, weather).
         self.channel_mixer = (
-            BiMambaEncoder(
+            build_variate_encoder(
+                mixer_kind,
                 d_model=d_model,
                 n_layers=channel_mixer_layers,
                 d_state=mamba_d_state,

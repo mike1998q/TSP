@@ -90,6 +90,14 @@ VARIANTS = {
                    {("model", "mixer_placement"): "both"}),
     "time_mixer_only": ("variate mixer in the time branch only (freq unmixed)",
                         {("model", "mixer_placement"): "time"}),
+    # --- variate-encoder alternatives (S-Mamba Tab. 5, "VC Encoding") ---
+    # S-Mamba benchmarks its bidirectional Mamba variate block against
+    # Attention (iTransformer's choice) and against a unidirectional scan.
+    # These give the same comparison inside our pipeline.
+    "vc_unimamba": ("variate mixer: bi-Mamba -> uni-Mamba (one direction)",
+                    {("model", "mixer_kind"): "unimamba"}),
+    "vc_attention": ("variate mixer: bi-Mamba -> multi-head Attention",
+                     {("model", "mixer_kind"): "attention"}),
     "freq_mamba": ("bidirectional Mamba over frequency bins instead of the linear filter",
                    {("model", "freq_encoder"): "mamba"}),
     # --- dispersion chain (STD-style scale forecasting) ---
@@ -138,22 +146,36 @@ REVIN_ALPHA_CHAIN = ["full", "no_revin", "revin_alpha_learned",
 # multiple seeds and report paired confidence intervals, then apply
 # Benjamini-Hochberg across the family (scripts/compute_stats_correction.py) --
 # with 8 variants a few will clear an uncorrected threshold by chance.
-SMAMBA_STYLE_ABLATION = [
-    "full",                 # reference
-    # -- variate-correlation block (S-Mamba's VC) --
-    "no_channel_mixer",     # remove cross-variate mixing entirely
-    "@mixer_flip",          # shared <-> both (resolved against the config)
-    "time_mixer_only",      # mix in the time branch only
-    # -- temporal-dependency block (S-Mamba's TD) --
-    "@time_encoder_flip",   # Mamba <-> MLP over time
-    # -- frequency branch (no S-Mamba analogue) --
-    "freq_mamba",           # linear spectral filter -> BiMamba over bins
-    # -- forecast decomposition (no S-Mamba analogue) --
-    "time_only",            # drop the frequency branch
-    "freq_only",            # drop the time branch
-    # -- normalization --
-    "no_revin",
+# Structured as S-Mamba's Tab. 5: rows grouped by DESIGN ("reference",
+# "Replace", "w/o"), each naming which block is altered and what it becomes.
+# ms-Mamba's Tab. 4 adds the complementary idea of sweeping a *design choice*
+# (their sampling-rate strategy) rather than only removing parts, which is what
+# the fusion-rule and mixer-placement rows below do.
+#
+# The three blocks, with S-Mamba's names in brackets:
+#   VC   [Variate Correlation] -- the cross-variate mixer
+#   TD   [Temporal Dependency] -- the time-axis encoder
+#   FD                         -- the frequency branch, which S-Mamba lacks
+#
+# (design group, variant, VC cell, TD cell, FD cell)
+SMAMBA_GRID = [
+    ("reference", "full",             "bi-Mamba", "base",      "linear"),
+    # -- Replace: swap a block for an alternative of the same role ----------
+    ("Replace",   "vc_unimamba",      "uni-Mamba", "base",     "linear"),
+    ("Replace",   "vc_attention",     "Attention", "base",     "linear"),
+    ("Replace",   "@mixer_flip",      "re-placed", "base",     "linear"),
+    ("Replace",   "time_mixer_only",  "time only", "base",     "linear"),
+    ("Replace",   "@time_encoder_flip", "bi-Mamba", "swapped", "linear"),
+    ("Replace",   "freq_mamba",       "bi-Mamba", "base",      "bi-Mamba"),
+    ("Replace",   "fusion_sum",       "bi-Mamba", "base",      "linear"),
+    # -- w/o: remove a block entirely ---------------------------------------
+    ("w/o",       "no_channel_mixer", "w/o",       "base",     "linear"),
+    ("w/o",       "time_only",        "bi-Mamba", "base",      "w/o"),
+    ("w/o",       "freq_only",        "bi-Mamba", "w/o",       "linear"),
+    ("w/o",       "no_revin",         "bi-Mamba", "base",      "linear"),
 ]
+
+SMAMBA_STYLE_ABLATION = [v for _, v, _, _, _ in SMAMBA_GRID]
 
 
 def resolve_chain(names: list, cfg: dict) -> list:
@@ -178,7 +200,8 @@ def resolve_chain(names: list, cfg: dict) -> list:
         n = flip.get(n, n)
         # drop variants that cannot apply to this config
         if n in ("no_channel_mixer", "time_mixer_only", "shared_mixer",
-                 "both_mixer") and m.get("channel_mixer_layers", 1) == 0:
+                 "both_mixer", "vc_unimamba", "vc_attention") \
+                and m.get("channel_mixer_layers", 1) == 0:
             continue
         out.append(n)
     return out

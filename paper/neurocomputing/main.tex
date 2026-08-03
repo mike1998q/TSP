@@ -26,8 +26,15 @@
 \definecolor{cFreqBG}{HTML}{FDF0E6}
 
 \newcommand{\model}{DD-Mamba}
-\newcommand{\best}[1]{\textbf{#1}}
-\newcommand{\second}[1]{\underline{#1}}
+% Result-table highlighting, following the convention of S-Mamba
+% (Wang et al., Neurocomputing 2025) and ms-Mamba (Karadag et al.):
+% best in bold, second best underlined. S-Mamba additionally colors the two
+% (red / purple); we keep the color but the bold and underline carry the
+% meaning on their own, so the tables stay readable in greyscale print.
+\definecolor{cBest}{HTML}{C1272D}
+\definecolor{cSecond}{HTML}{6A3D9A}
+\newcommand{\best}[1]{\textcolor{cBest}{\textbf{#1}}}
+\newcommand{\second}[1]{\textcolor{cSecond}{\underline{#1}}}
 
 \journal{Neurocomputing}
 
@@ -762,32 +769,90 @@ Solar & MSE & $0.181$ & $0.189$ & $0.207$ & $0.206$ & 0.196 \\
 $H\in\{96,192,336,720\}$, look-back $L{=}96$; five matched run indices;
 lower is better). Every baseline is re-implemented and evaluated with the
 same splits and protocol as \model{}; model-specific tuning budgets were not
-equalized. \best{Bold} marks the lowest per-dataset
-mean. $^{*}$\,\model{} beats the best competing baseline at
-Benjamini--Hochberg $q{<}0.05$ (paired $t$-test, $n{=}5$;
-\texttt{analyze\_unified\_baselines.py}). \model{} has the lowest mean on
-five of six datasets and the corrected test supports the margin on four
-(Electricity, ETTh2, ETTm2, ETTh1); Weather is a statistical tie
-($q{=}0.23$) and PatchTST is better on ETTm1.}
+equalized. Following the presentation of S-Mamba \cite{smamba} and ms-Mamba
+\cite{msmamba}, the \best{best} result per dataset and metric is bold and the
+\second{second best} underlined. $^{*}$\,\model{} beats the best competing
+baseline at Benjamini--Hochberg $q{<}0.05$ (paired $t$-test, $n{=}5$;
+\texttt{analyze\_unified\_baselines.py}); those papers report point estimates
+without significance testing, so the starred cells are the subset of wins this
+protocol can actually support. \model{} has the lowest MSE on five of six
+datasets and the corrected test supports the margin on four; Weather is a
+statistical tie ($q{=}0.23$) and PatchTST is better on ETTm1.}
 \label{tab:unified}
 \scriptsize
-\setlength{\tabcolsep}{4pt}
+\setlength{\tabcolsep}{2.6pt}
 \resizebox{\textwidth}{!}{%
-\begin{tabular}{@{}lcccccc@{}}
+\begin{tabular}{@{}l cc cc cc cc cc cc cc cc@{}}
 \toprule
-Model & ETTh1 & ETTh2 & ETTm1 & ETTm2 & Weather & Electricity \\
+Models & \multicolumn{2}{c}{\textbf{\model{}}} & \multicolumn{2}{c}{PatchTST}
+ & \multicolumn{2}{c}{iTransformer} & \multicolumn{2}{c}{S-Mamba}
+ & \multicolumn{2}{c}{ms-Mamba} & \multicolumn{2}{c}{RLinear}
+ & \multicolumn{2}{c}{NLinear} & \multicolumn{2}{c}{DLinear} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}\cmidrule(lr){8-9}
+\cmidrule(lr){10-11}\cmidrule(lr){12-13}\cmidrule(lr){14-15}\cmidrule(lr){16-17}
+Metric & MSE & MAE & MSE & MAE & MSE & MAE & MSE & MAE & MSE & MAE
+ & MSE & MAE & MSE & MAE & MSE & MAE \\
 \midrule
-\model{} & \best{0.439}/\best{0.434}$^{*}$ & \best{0.376}/\best{0.401}$^{*}$ & 0.387/0.398 & \best{0.280}/\best{0.325}$^{*}$ & \best{0.248}/\best{0.276} & \best{0.168}/\best{0.263}$^{*}$ \\
-DLinear & 0.462/0.456 & 0.545/0.509 & 0.410/0.412 & 0.359/0.407 & 0.267/0.318 & 0.211/0.299 \\
-NLinear & 0.464/0.450 & 0.390/0.412 & 0.429/0.419 & 0.294/0.337 & 0.279/0.296 & 0.220/0.299 \\
-RLinear & 0.457/0.443 & 0.391/0.411 & 0.424/0.413 & 0.293/0.336 & 0.273/0.292 & 0.217/0.295 \\
-PatchTST & 0.456/0.449 & 0.385/0.408 & \best{0.381}/\best{0.396} & 0.284/0.331 & 0.249/0.275 & 0.189/0.276 \\
-iTransformer & 0.444/0.442 & 0.383/0.407 & 0.407/0.409 & 0.292/0.335 & 0.265/0.285 & 0.195/0.282 \\
-S-Mamba & 0.463/0.458 & 0.394/0.410 & 0.397/0.406 & 0.297/0.335 & 0.251/0.278 & 0.183/0.275 \\
-ms-Mamba & 0.459/0.451 & 0.409/0.420 & 0.393/0.403 & 0.288/0.333 & 0.257/0.281 & 0.187/0.277 \\
+ETTh1 & \best{0.439}$^{*}$ & \best{0.434} & 0.456 & 0.449 & \second{0.444} & \second{0.442} & 0.463 & 0.458 & 0.459 & 0.451 & 0.457 & 0.443 & 0.464 & 0.450 & 0.462 & 0.456 \\
+ETTh2 & \best{0.376}$^{*}$ & \best{0.401} & 0.385 & 0.408 & \second{0.383} & \second{0.407} & 0.394 & 0.410 & 0.409 & 0.420 & 0.391 & 0.411 & 0.390 & 0.412 & 0.545 & 0.509 \\
+ETTm1 & \second{0.387} & \second{0.398} & \best{0.381} & \best{0.396} & 0.407 & 0.409 & 0.397 & 0.406 & 0.393 & 0.403 & 0.424 & 0.413 & 0.429 & 0.419 & 0.410 & 0.412 \\
+ETTm2 & \best{0.280}$^{*}$ & \best{0.325} & \second{0.284} & \second{0.331} & 0.292 & 0.335 & 0.297 & 0.335 & 0.288 & 0.333 & 0.293 & 0.336 & 0.294 & 0.337 & 0.359 & 0.407 \\
+Weather & \best{0.248} & \second{0.276} & \second{0.249} & \best{0.275} & 0.265 & 0.285 & 0.251 & 0.278 & 0.257 & 0.281 & 0.273 & 0.292 & 0.279 & 0.296 & 0.267 & 0.318 \\
+Electricity & \best{0.168}$^{*}$ & \best{0.263} & 0.189 & 0.276 & 0.195 & 0.282 & \second{0.183} & \second{0.275} & 0.187 & 0.277 & 0.217 & 0.295 & 0.220 & 0.299 & 0.211 & 0.299 \\
 \bottomrule
 \end{tabular}}
 \end{table*}
+
+\begin{table*}[tb]
+\centering
+\caption{PEMS results against the \emph{published} numbers of S-Mamba
+\cite{smamba} and ms-Mamba \cite{msmamba}, look-back $L{=}96$, horizons
+$T\in\{12,24,48,96\}$ (MSE). \best{Best} bold, \second{second best}
+underlined. \textbf{These are not same-pipeline reruns.} Unlike
+Table~\ref{tab:unified}, the competitors' figures are transcribed from their
+papers and were produced by their own code, preprocessing and seeds, so this
+table is a positioning reference rather than a controlled comparison, and no
+significance test is applicable to it. PEMS is a confirmatory family for us:
+these datasets were not used to develop any component of \model{}.}
+\label{tab:pems}
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}ll cccc c@{}}
+\toprule
+Dataset & Model & $T{=}12$ & $T{=}24$ & $T{=}48$ & $T{=}96$ & Avg \\
+\midrule
+\multirow{3}{*}{PEMS03}
+ & \model{} & \second{0.065} & \best{0.085} & \best{0.128} & \best{0.187} & \best{0.116} \\
+ & S-Mamba & \best{0.065} & \second{0.087} & \second{0.133} & \second{0.201} & \second{0.122} \\
+ & ms-Mamba & 0.066 & \second{0.087} & \second{0.133} & \second{0.201} & 0.122 \\
+\midrule
+\multirow{3}{*}{PEMS04}
+ & \model{} & 0.075 & 0.093 & 0.123 & 0.171 & 0.116 \\
+ & S-Mamba & \second{0.076} & \second{0.084} & \second{0.115} & \second{0.137} & \second{0.103} \\
+ & ms-Mamba & \best{0.072} & \best{0.083} & \best{0.099} & \best{0.121} & \best{0.094} \\
+\midrule
+\multirow{3}{*}{PEMS07}
+ & \model{} & 0.059 & 0.079 & 0.105 & 0.139 & 0.095 \\
+ & S-Mamba & \second{0.063} & \second{0.081} & \second{0.093} & \second{0.117} & \second{0.089} \\
+ & ms-Mamba & \best{0.060} & \best{0.075} & \best{0.091} & \best{0.109} & \best{0.084} \\
+\midrule
+\multirow{3}{*}{PEMS08}
+ & \model{} & \best{0.074} & \best{0.099} & \best{0.146} & \best{0.234} & \best{0.138} \\
+ & S-Mamba & \second{0.076} & 0.104 & 0.167 & 0.245 & 0.148 \\
+ & ms-Mamba & \second{0.073} & \second{0.098} & \second{0.154} & \second{0.236} & \second{0.140} \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\FloatBarrier
+On the four PEMS datasets (Table~\ref{tab:pems}) \model{} is ahead of both
+published Mamba forecasters on PEMS03 ($0.116$ vs.\ $0.122$/$0.122$) and
+PEMS08 ($0.138$ vs.\ $0.148$/$0.140$), and behind both on PEMS04 and PEMS07,
+where ms-Mamba's multi-scale sampling rates are strongest. Because the
+competing figures come from their own pipelines, we read this as
+\emph{positioning} rather than as evidence of superiority: the split is two
+datasets each way, and the protocol difference is large enough that a
+$0.005$-scale margin should not be over-interpreted.
 
 \FloatBarrier
 Table~\ref{tab:unified} is the paper's primary accuracy evidence because it
@@ -816,7 +881,70 @@ where comparable in-pipeline baselines are unavailable.
 
 Our ablation harness flips exactly one switch of a dataset's full
 configuration, holding split, schedule, seeds, and every other
-hyperparameter fixed. We report its complete output on three datasets under
+hyperparameter fixed. The design follows S-Mamba \cite{smamba}, whose
+component study groups variants into a \emph{reference} row, a
+\emph{Replace} block that swaps a component for an alternative of the same
+role, and a \emph{w/o} block that removes it outright, reporting each block's
+effect on both metrics; ms-Mamba \cite{msmamba} adds the complementary idea of
+sweeping a design \emph{choice} rather than only deleting parts. We adopt both.
+Table~\ref{tab:ablation_grid} lays out the resulting grid over the three
+blocks of \model{}: the cross-variate mixer (S-Mamba's \emph{variate
+correlation} block), the time-axis encoder (their \emph{temporal dependency}
+block), and the frequency branch, which has no S-Mamba counterpart.
+
+Two consequences follow from taking their design seriously. First, S-Mamba
+benchmarks its bidirectional Mamba mixer against multi-head attention and
+against a unidirectional scan; we implement both alternatives
+(\texttt{mixer\_kind}) so that comparison runs inside our pipeline rather than
+being inherited across papers. Second, because several switches are already
+set to one of their two values by a given dataset --- PEMS ships an MLP time
+encoder and a weight-tied mixer, ETT ships Mamba and untied --- the grid is
+resolved per configuration, so no row silently duplicates the reference and
+inflates the correction family.
+
+\begin{table}[tb]
+\centering
+\caption{Ablation design, following S-Mamba's grouping into a reference row,
+\emph{Replace} rows (component swapped for an alternative of the same role)
+and \emph{w/o} rows (component removed). VC: cross-variate mixer; TD:
+time-axis encoder; FD: frequency branch. ``base'' is whatever the dataset's
+released configuration specifies, so the grid resolves to 12 runs on the
+high-channel datasets and 7 where no mixer is configured.}
+\label{tab:ablation_grid}
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}ll lll@{}}
+\toprule
+Design & Variant & VC & TD & FD \\
+\midrule
+reference & full & bi-Mamba & base & linear filter \\
+\midrule
+\multirow{7}{*}{Replace}
+ & uni-directional mixer & uni-Mamba & base & linear filter \\
+ & attention mixer & Attention & base & linear filter \\
+ & mixer placement & tied\,$\leftrightarrow$\,untied & base & linear filter \\
+ & mixer in time branch only & time only & base & linear filter \\
+ & time encoder & bi-Mamba & Mamba\,$\leftrightarrow$\,MLP & linear filter \\
+ & spectral encoder & bi-Mamba & base & bi-Mamba \\
+ & fusion rule & bi-Mamba & base & linear filter (averaged) \\
+\midrule
+\multirow{4}{*}{w/o}
+ & no cross-variate mixing & w/o & base & linear filter \\
+ & no frequency branch & bi-Mamba & base & w/o \\
+ & no time branch & bi-Mamba & w/o & linear filter \\
+ & no instance normalization & bi-Mamba & base & linear filter \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+A methodological difference is worth stating explicitly, because it changes
+what the table can support. S-Mamba and ms-Mamba both report single-run
+deltas and read the sign directly. With twelve variants, roughly one would
+clear an uncorrected $0.05$ threshold by chance, so we run multiple seeds,
+report paired confidence intervals, and apply Benjamini--Hochberg across the
+family. That is why our component conclusions are weaker than theirs on the
+same architecture family: not because the effects are smaller, but because
+they are being asked to survive a correction. We report its complete output on three datasets under
 their \emph{final released configurations}, three seeds each at $H{=}96$:
 ETTh1 and Solar (Table~\ref{tab:ablation}) and Weather
 (Table~\ref{tab:ablation_weather}), with the paired methodology of

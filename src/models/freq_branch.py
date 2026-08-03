@@ -22,7 +22,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from .mamba_block import BiMambaEncoder
+from .mamba_block import BiMambaEncoder, build_variate_encoder
 
 
 class ComplexLinear(nn.Module):
@@ -71,6 +71,7 @@ class FreqBranch(nn.Module):
         backbone: str = "none",
         zero_init: bool = True,
         zero_init_head: str = "auto",
+        mixer_kind: str = "bimamba",
     ):
         super().__init__()
         self.seq_len = seq_len
@@ -128,7 +129,8 @@ class FreqBranch(nn.Module):
         # Optional cross-channel mixing over the variate dimension (see
         # TimeBranch): bidirectional Mamba across channels.
         self.channel_mixer = (
-            BiMambaEncoder(
+            build_variate_encoder(
+                mixer_kind,
                 d_model=d_model,
                 n_layers=channel_mixer_layers,
                 d_state=mamba_d_state,

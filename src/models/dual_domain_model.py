@@ -70,6 +70,7 @@ class DualDomainForecaster(nn.Module):
         head_dropout: float = 0.1,
         channel_mixer_layers: int = 1,
         mixer_placement: str = "both",
+        mixer_kind: str = "bimamba",
         use_revin: bool = True,
         revin_alpha: str = "fixed",
         revin_alpha_init: float = 1.0,
@@ -118,6 +119,7 @@ class DualDomainForecaster(nn.Module):
             mamba_expand=mamba_expand,
             use_official_mamba=use_official_mamba,
             channel_mixer_layers=time_mix,
+            mixer_kind=mixer_kind,
             use_linear_backbone=time_linear_backbone,
             zero_init=zero_init,
         )
@@ -137,6 +139,7 @@ class DualDomainForecaster(nn.Module):
             mamba_expand=mamba_expand,
             use_official_mamba=use_official_mamba,
             channel_mixer_layers=freq_mix,
+            mixer_kind=mixer_kind,
             zero_init=zero_init,
             zero_init_head=freq_zero_init_head,
         )
@@ -332,6 +335,7 @@ def build_model(cfg: dict, n_channels: int):
         head_dropout=mcfg["head_dropout"],
         channel_mixer_layers=mcfg.get("channel_mixer_layers", 1),
         mixer_placement=mcfg.get("mixer_placement", "both"),
+        mixer_kind=mcfg.get("mixer_kind", "bimamba"),
         use_revin=mcfg.get("use_revin", True),
         revin_alpha=mcfg.get("revin_alpha", "fixed"),
         revin_alpha_init=mcfg.get("revin_alpha_init", 1.0),
