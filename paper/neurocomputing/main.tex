@@ -358,31 +358,20 @@ over variates --- detailed next.
 \centering
 \includegraphics[width=\textwidth]{fig_architecture.pdf}
 \caption{\model{} as a forecast-decomposable architecture. The normalized
-input is routed to two explicit prediction paths, drawn as the shaded
-time-domain (left) and frequency-domain (right) bands. The time branch applies
-moving-average decomposition, a DLinear anchor and a temporal encoder [TD];
-the frequency branch applies an rFFT, an optional low-pass, a spectral encoder
-[FD] and an optional FITS-style linear map (dashed: enabled per dataset). Both
-branches end in a cross-variate mixer [VC] and a forecast head, so each emits
-a \emph{complete} forecast, $\mathbf{Y}_{\mathrm{t}}$ or
-$\mathbf{Y}_{\mathrm{f}}$. Block labels [TD], [VC] and [FD] index the ablation
-grid of Table~\ref{tab:ablation_grid}. Fusion and reconstruction continue in
-Fig.~\ref{fig:fusion}. Drawn to the template supplied for this submission and
-released as editable Visio source (\texttt{fig\_diagrams.vsdx}).}
+input is routed to two explicit prediction paths. The time branch combines a
+DLinear anchor with a causal-Mamba correction; the frequency branch combines
+a complex spectral encoder with an optional FITS-style linear spectral map.
+Each branch produces a complete forecast, $\mathbf{Y}_{\mathrm{t}}$ or
+$\mathbf{Y}_{\mathrm{f}}$, and branch features parameterize the convex gate
+$g$. Shadowed cuboids denote intermediate tensors, vertical lavender bars
+denote learned operators, purple and green arrows trace the time- and
+frequency-domain paths, gold arrows mark spectral/gating operations, and
+black dashed arrows denote auxiliary or residual connections. Zero
+initialization and dataset-level switches are stated beside their associated
+operators. The final forecast is
+$g\mathbf{Y}_{\mathrm{t}}+(1-g)\mathbf{Y}_{\mathrm{f}}$, followed by inverse
+instance normalization.}
 \label{fig:arch}
-\end{figure}
-
-\begin{figure}[H]
-\centering
-\includegraphics[width=\textwidth]{fig_fusion.pdf}
-\caption{Forecast fusion and reconstruction. Branch features parameterize the
-gate $g$; the two branch forecasts are then combined either convexly
-($g\mathbf{Y}_{\mathrm{t}}+(1-g)\mathbf{Y}_{\mathrm{f}}$, the default) or
-additively ($\mathbf{Y}_{\mathrm{t}}+\alpha\mathbf{Y}_{\mathrm{f}}$), and the
-result is de-normalized. The convex rule confines the output to the segment
-between the two branch forecasts; the additive rule lifts that constraint
-(Section~\ref{sec:discussion}).}
-\label{fig:fusion}
 \end{figure}
 
 
@@ -491,21 +480,17 @@ gate ($g_0\!\approx\!0.9$) keeps small.
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=\textwidth]{fig_selective_blocks.pdf}
-\caption{The three ablatable blocks of \model{}, with the alternatives each is
-swapped for in the component study (dashed boxes; Table~\ref{tab:ablation_grid}).
-\textbf{(a)}~The temporal-dependency block [TD] normalizes, applies a causal
-Mamba scan over time, and refines with a feed-forward layer; it can be replaced
-by an MLP or removed. \textbf{(b)}~The variate-correlation block [VC] scans the
-$C$ channel tokens forward and backward, sums the two streams and applies
-feed-forward refinement; it can be replaced by a unidirectional scan or by
-multi-head attention, or removed. Channel order carries no temporal meaning,
-which is why the scan is bidirectional. \textbf{(c)}~The frequency block [FD]
-transforms the window, filters it with a complex linear map over bins, and
-emits a spectral forecast; the filter can be replaced by a bidirectional Mamba
-over bins, or the branch removed. Blocks (a) and (b) correspond to the temporal
-and variate-correlation encoders that S-Mamba \cite{smamba} ablates; (c) has no
-counterpart there.}
+\includegraphics[width=0.95\textwidth]{fig_selective_blocks.pdf}
+\caption{Selective state-space modules used by \model{}.
+\textbf{(a)}~The causal time-axis Mamba block normalizes and projects the
+input, forms a convolutional content stream and a SiLU gate, predicts
+$(\Delta_k,\mathbf{B}_k,\mathbf{C}_k)$ from the input, and
+evaluates Eq.~\eqref{eq:ssm} with an outer residual connection.
+\textbf{(b)}~The variate mixer scans the $C$ channel tokens in both directions,
+restores the reverse scan to the original order, sums the two streams, and
+applies residual-normalized position-wise feed-forward refinement. The two
+panels distinguish temporal causality (ordered time steps) from non-causal
+cross-channel interaction (channel order has no temporal interpretation).}
 \label{fig:blocks}
 \end{figure}
 

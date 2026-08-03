@@ -1,17 +1,24 @@
 #!/usr/bin/env python3
-"""Rebuild the paper's schematic figures in the style of the supplied Visio
-template, emitting both an editable .vsdx and the .pdf the manuscript includes.
+"""Draw the DD-Mamba structure diagram in the style of the supplied Visio
+template and save it as editable .vsdx.
 
-Two figures are reconstructed:
+Output goes to ``diagrams/`` and is deliberately SEPARATE from the manuscript
+figures. The paper keeps its own schematics (fig_architecture.pdf,
+fig_selective_blocks.pdf, produced by draw_scientific_figures.py); nothing here
+writes into paper/neurocomputing/, so re-running this can never overwrite them.
 
-  fig_architecture   -- the end-to-end DD-Mamba pipeline
-  fig_selective_blocks -- the internals of the three ablatable blocks
+  diagrams/dd_mamba_structure.vsdx   3 pages, editable in Visio
+  diagrams/preview_*.pdf/.png        rendering of the same pages, for review
 
-The data figures (fig_dispersion, fig_branch_matrix, fig_pcc_mixer) are plots
-of measured results, not schematics, and are left to make_data_figures.py.
+Pages:
+  1  end-to-end DD-Mamba pipeline
+  2  forecast fusion and reconstruction
+  3  the three ablatable blocks (TD / VC / FD)
 
-Both back-ends read the same Diagram objects, so the Visio source and the
-figure in the PDF cannot drift apart.
+A .vsdx is an OPC package -- a ZIP of XML parts, same container family as
+.docx -- so it is written directly, with no Visio and no Windows involved. The
+preview renderer consumes the same Diagram objects, so the previews cannot
+drift from the Visio source.
 """
 from __future__ import annotations
 
@@ -24,7 +31,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from vsdx_lib import (AMBER, BLUE, CYAN, GREEN, GREY, INK, PINK, WHITE, YELLOW,
                       LW_THIN, Diagram, render_pdf, write_vsdx)
 
-OUT = ROOT / "paper" / "neurocomputing"
+OUT = ROOT / "diagrams"
 
 
 def architecture() -> Diagram:
@@ -163,16 +170,19 @@ def selective_blocks() -> Diagram:
 
 
 def main() -> None:
+    OUT.mkdir(parents=True, exist_ok=True)
     arch = architecture()
     fuse = architecture_lower()
     blocks = selective_blocks()
 
-    write_vsdx([arch, fuse, blocks], str(OUT / "fig_diagrams.vsdx"))
-    render_pdf(arch, str(OUT / "fig_architecture.pdf"))
-    render_pdf(fuse, str(OUT / "fig_fusion.pdf"))
-    render_pdf(blocks, str(OUT / "fig_selective_blocks.pdf"))
-    print("[saved] fig_diagrams.vsdx (3 pages)")
-    print("[saved] fig_architecture.pdf, fig_fusion.pdf, fig_selective_blocks.pdf")
+    vsdx = OUT / "dd_mamba_structure.vsdx"
+    write_vsdx([arch, fuse, blocks], str(vsdx))
+    render_pdf(arch, str(OUT / "preview_1_architecture.pdf"))
+    render_pdf(fuse, str(OUT / "preview_2_fusion.pdf"))
+    render_pdf(blocks, str(OUT / "preview_3_blocks.pdf"))
+    print(f"[saved] {vsdx.relative_to(ROOT)}  (3 pages)")
+    print("[saved] diagrams/preview_{1_architecture,2_fusion,3_blocks}.pdf")
+    print("note: the manuscript's own figures are untouched.")
 
 
 if __name__ == "__main__":
