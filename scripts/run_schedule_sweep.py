@@ -74,6 +74,27 @@ ARMS = {
     # for the horizons that overfit (H=720): more regularization, not more lr
     "halve_reg": {"lr_scheduler": "halve", "epochs": 10,
                   "weight_decay": 1e-3},
+    # --- PEMS regularization arms ---------------------------------------
+    # After the schedule fix, PEMS flipped from underfitting to strongly
+    # overfitting: mean train/val ratio 0.51 across the 16 dataset x horizon
+    # cells, against 0.86/0.76 on electricity. That gap is where the remaining
+    # headroom is, so these arms hold the (validated) schedule fixed and vary
+    # only regularization. Baseline for comparison is "pems_base".
+    "pems_base": {"lr_scheduler": "cosine_warmup", "epochs": 30,
+                  "warmup_epochs": 2, "patience": 6, "lr": 5e-4},
+    "pems_wd": {"lr_scheduler": "cosine_warmup", "epochs": 30,
+                "warmup_epochs": 2, "patience": 6, "lr": 5e-4,
+                "weight_decay": 1e-3},
+    "pems_wd_hi": {"lr_scheduler": "cosine_warmup", "epochs": 30,
+                   "warmup_epochs": 2, "patience": 6, "lr": 5e-4,
+                   "weight_decay": 5e-3},
+}
+
+# Model-side regularization needs model.* keys, so these are applied separately
+# by --model-arm (dropout is not a train.* setting).
+MODEL_ARMS = {
+    "drop2": {"time_dropout": 0.2, "freq_dropout": 0.2, "head_dropout": 0.2},
+    "drop3": {"time_dropout": 0.3, "freq_dropout": 0.3, "head_dropout": 0.3},
 }
 
 
@@ -85,6 +106,9 @@ def main() -> None:
     ap.add_argument("--arms", nargs="+", default=["halve", "cosine_warmup_30"],
                     choices=sorted(ARMS))
     ap.add_argument("--seeds", type=int, default=1)
+    ap.add_argument("--model-arm", default=None, choices=sorted(MODEL_ARMS),
+                    help="Additionally apply a model.* regularization preset "
+                         "(dropout) on top of each train.* arm.")
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
@@ -98,8 +122,11 @@ def main() -> None:
                 cfg = copy.deepcopy(base)
                 cfg["data"]["pred_len"] = h
                 cfg["train"].update(ARMS[arm])
+                if args.model_arm:
+                    cfg["model"].update(MODEL_ARMS[args.model_arm])
                 cfg["experiment"]["seed"] = base["experiment"]["seed"] + s
-                cfg["experiment"]["name"] = f"{name}_{arm}_h{h}_s{s}"
+                tag = f"{arm}+{args.model_arm}" if args.model_arm else arm
+                cfg["experiment"]["name"] = f"{name}_{tag}_h{h}_s{s}"
                 print(f"\n=== {name} | arm={arm} | H={h} | seed offset {s} ===")
                 res = train(cfg)
                 rows.append({

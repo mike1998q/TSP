@@ -86,6 +86,8 @@ VARIANTS = {
                            {("model", "channel_mixer_layers"): 1}),
     "shared_mixer": ("variate mixer weight-tied across branches (~half mixer params)",
                      {("model", "mixer_placement"): "shared"}),
+    "both_mixer": ("independent variate mixer in each branch (untie them)",
+                   {("model", "mixer_placement"): "both"}),
     "time_mixer_only": ("variate mixer in the time branch only (freq unmixed)",
                         {("model", "mixer_placement"): "time"}),
     "freq_mamba": ("bidirectional Mamba over frequency bins instead of the linear filter",
@@ -121,6 +123,66 @@ FUSION_RULE_CHAIN = ["full", "fusion_sum", "fusion_residual",
 REVIN_ALPHA_CHAIN = ["full", "no_revin", "revin_alpha_learned",
                      "revin_alpha_channel"]
 
+# ---------------------------------------------------------------------------
+# S-Mamba-style component ablation.
+#
+# S-Mamba (Wang et al., Neurocomputing 2025) validates its design by ablating
+# two blocks: the VC (Variate Correlation) bidirectional Mamba across the
+# variate axis, and the TD (Temporal Dependency) block over time. Each is
+# removed or swapped for an alternative, and the accuracy delta attributed to
+# it. DD-Mamba has structurally matching components plus two it does not share
+# (the parallel frequency branch and the fusion rule), so the analogous
+# ablation is the union below, grouped by which block each variant probes.
+#
+# Difference in method, deliberately: S-Mamba reports single-run deltas. We run
+# multiple seeds and report paired confidence intervals, then apply
+# Benjamini-Hochberg across the family (scripts/compute_stats_correction.py) --
+# with 8 variants a few will clear an uncorrected threshold by chance.
+SMAMBA_STYLE_ABLATION = [
+    "full",                 # reference
+    # -- variate-correlation block (S-Mamba's VC) --
+    "no_channel_mixer",     # remove cross-variate mixing entirely
+    "@mixer_flip",          # shared <-> both (resolved against the config)
+    "time_mixer_only",      # mix in the time branch only
+    # -- temporal-dependency block (S-Mamba's TD) --
+    "@time_encoder_flip",   # Mamba <-> MLP over time
+    # -- frequency branch (no S-Mamba analogue) --
+    "freq_mamba",           # linear spectral filter -> BiMamba over bins
+    # -- forecast decomposition (no S-Mamba analogue) --
+    "time_only",            # drop the frequency branch
+    "freq_only",            # drop the time branch
+    # -- normalization --
+    "no_revin",
+]
+
+
+def resolve_chain(names: list, cfg: dict) -> list:
+    """Turn '@...' placeholders into the variant that actually changes *this*
+    config.
+
+    Several switches are already set to one of their two values by a given
+    dataset (PEMS ships time_encoder=mlp and mixer_placement=shared, ETT ships
+    mamba/both), so a fixed variant list would silently include no-ops that
+    duplicate the reference and waste a cell of the correction family. These
+    placeholders always pick the direction that differs.
+    """
+    m = cfg["model"]
+    flip = {
+        "@time_encoder_flip":
+            "time_mlp" if m.get("time_encoder", "mamba") == "mamba" else "time_mamba",
+        "@mixer_flip":
+            "shared_mixer" if m.get("mixer_placement", "both") != "shared" else "both_mixer",
+    }
+    out = []
+    for n in names:
+        n = flip.get(n, n)
+        # drop variants that cannot apply to this config
+        if n in ("no_channel_mixer", "time_mixer_only", "shared_mixer",
+                 "both_mixer") and m.get("channel_mixer_layers", 1) == 0:
+            continue
+        out.append(n)
+    return out
+
 
 def default_variants(cfg: dict) -> list:
     """Pick the variants that actually toggle something in this config."""
@@ -152,6 +214,13 @@ def main():
                         help="Subset of variants (default: auto-select).")
     parser.add_argument("--seeds", type=int, default=1,
                         help="Seeds per variant (base seed, +1, +2, ...).")
+    parser.add_argument("--chain", default=None,
+                        choices=["smamba", "fusion", "revin_alpha", "dispersion"],
+                        help="Run a named ablation chain instead of --variants. "
+                             "'smamba' mirrors the component ablation of "
+                             "S-Mamba (Wang et al., Neurocomputing 2025), "
+                             "resolved against this config so no variant is a "
+                             "no-op.")
     args, unknown = parser.parse_known_args()
 
     base_cfg = load_config(args.config)
@@ -159,7 +228,12 @@ def main():
     base_name = base_cfg["experiment"]["name"]
     base_seed = base_cfg["experiment"]["seed"]
 
-    names = args.variants or default_variants(base_cfg)
+    chains = {"smamba": SMAMBA_STYLE_ABLATION, "fusion": FUSION_RULE_CHAIN,
+              "revin_alpha": REVIN_ALPHA_CHAIN, "dispersion": DISPERSION_CHAIN}
+    if args.chain:
+        names = resolve_chain(chains[args.chain], base_cfg)
+    else:
+        names = resolve_chain(args.variants or default_variants(base_cfg), base_cfg)
     unknown_names = [n for n in names if n not in VARIANTS]
     if unknown_names:
         raise SystemExit(f"Unknown variants: {unknown_names}. "
