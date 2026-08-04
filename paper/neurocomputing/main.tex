@@ -578,8 +578,10 @@ Four further baselines from the standard comparison set --- Crossformer
 \cite{crossformer}, TiDE \cite{tide}, FEDformer \cite{fedformer} and
 Autoformer \cite{autoformer} --- are implemented in the same harness
 (\texttt{src/models/baselines.py}) and included in the default sweep, but
-their runs are not yet complete; they are therefore absent from
-Table~\ref{tab:unified} rather than quoted from other papers.
+their runs are not yet complete. They therefore appear only in
+Table~\ref{tab:published}, at their \emph{published} values, and not in the
+same-pipeline Table~\ref{tab:unified}; we do not transcribe published figures
+into the controlled comparison.
 
 Published results are not mixed with this ranking because their
 preprocessing, optimization, and seeds differ. Crossformer
@@ -833,6 +835,57 @@ Dataset & Model & $T{=}12$ & $T{=}24$ & $T{=}48$ & $T{=}96$ & Avg \\
 \end{tabular}
 \end{table*}
 
+\begin{table*}[tb]
+\centering
+\caption{Positioning against the \emph{published} benchmark compilation of
+iTransformer \cite{itransformer}, which S-Mamba \cite{smamba} and ms-Mamba
+\cite{msmamba} also report against. Averages over
+$H\in\{96,192,336,720\}$ ($T\in\{12,24,48,96\}$ for PEMS), look-back
+$L{=}96$; ETT and PEMS are averaged over their four datasets, matching the
+granularity at which the source reports them. This table spans all three
+parts of the comparison and is the only place the full standard baseline set
+appears. \textbf{It is not a controlled comparison.} Every competitor figure
+was produced by a different codebase, preprocessing and seed set, so the
+numbers are a positioning reference and carry no significance test; the
+same-pipeline evidence is Table~\ref{tab:unified}. The size of the confound is
+measurable: re-running four of these baselines in our pipeline
+(Section~\ref{sec:setup}) moves them by up to $0.017$ MSE in either direction,
+which exceeds several of the margins below. \best{Best} bold,
+\second{second best} underlined --- under that caveat. S-Mamba's own column
+is omitted because its paper could not be retrieved in our build environment;
+its published PEMS figures are in Table~\ref{tab:pems} and its same-pipeline
+rerun in Table~\ref{tab:unified}. $^{\dagger}$\,Solar uses a test-informed
+normalization setting and is exploratory.}
+\label{tab:published}
+\scriptsize
+\setlength{\tabcolsep}{2.6pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}l cc cc cc cc cc cc cc cc cc@{}}
+\toprule
+Models & \multicolumn{2}{c}{\textbf{\model{}}} & \multicolumn{2}{c}{iTransformer}
+ & \multicolumn{2}{c}{RLinear} & \multicolumn{2}{c}{PatchTST}
+ & \multicolumn{2}{c}{Crossformer} & \multicolumn{2}{c}{TiDE}
+ & \multicolumn{2}{c}{DLinear} & \multicolumn{2}{c}{FEDformer}
+ & \multicolumn{2}{c}{Autoformer} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}\cmidrule(lr){8-9}
+\cmidrule(lr){10-11}\cmidrule(lr){12-13}\cmidrule(lr){14-15}\cmidrule(lr){16-17}
+\cmidrule(lr){18-19}
+Metric & MSE & MAE & MSE & MAE & MSE & MAE & MSE & MAE & MSE & MAE & MSE & MAE
+ & MSE & MAE & MSE & MAE & MSE & MAE \\
+\midrule
+Traffic & \second{0.437} & \second{0.283} & \best{0.428} & \best{0.282} & 0.626 & 0.378 & 0.481 & 0.304 & 0.550 & 0.304 & 0.760 & 0.473 & 0.625 & 0.383 & 0.610 & 0.376 & 0.628 & 0.379 \\
+PEMS (Avg) & \best{0.116} & \best{0.217} & \second{0.119} & \second{0.218} & 0.514 & 0.482 & 0.217 & 0.305 & 0.220 & 0.304 & 0.375 & 0.440 & 0.320 & 0.394 & 0.224 & 0.327 & 0.614 & 0.575 \\
+\midrule
+ETT (Avg) & \best{0.370} & \best{0.390} & 0.383 & 0.399 & \second{0.380} & \second{0.392} & 0.381 & 0.397 & 0.685 & 0.578 & 0.482 & 0.470 & 0.442 & 0.444 & 0.408 & 0.428 & 0.465 & 0.459 \\
+\midrule
+Weather & \best{0.247} & \best{0.275} & \second{0.258} & \second{0.278} & 0.272 & 0.291 & 0.259 & 0.281 & 0.259 & 0.315 & 0.271 & 0.320 & 0.265 & 0.317 & 0.309 & 0.360 & 0.338 & 0.382 \\
+Electricity & \best{0.169} & \best{0.264} & \second{0.178} & \second{0.270} & 0.219 & 0.298 & 0.205 & 0.290 & 0.244 & 0.334 & 0.251 & 0.344 & 0.212 & 0.300 & 0.214 & 0.327 & 0.227 & 0.338 \\
+Exchange & 0.363 & 0.405 & \second{0.360} & \best{0.403} & 0.378 & 0.417 & 0.367 & \second{0.404} & 0.940 & 0.707 & 0.370 & 0.413 & \best{0.354} & 0.414 & 0.519 & 0.429 & 0.613 & 0.539 \\
+Solar$^{\dagger}$ & \best{0.196} & \best{0.259} & \second{0.233} & \second{0.262} & 0.369 & 0.356 & 0.270 & 0.307 & 0.641 & 0.639 & 0.347 & 0.417 & 0.330 & 0.401 & 0.291 & 0.381 & 0.885 & 0.711 \\
+\bottomrule
+\end{tabular}}
+\end{table*}
+
 \FloatBarrier
 We report the main comparison in three parts, grouped by the kind of data
 each covers: \textbf{Part~I}, the traffic-flow benchmarks Traffic and the
@@ -843,6 +896,10 @@ is not only presentational: Part~I is the only group whose competitor numbers
 are \emph{published} rather than re-run in our pipeline, and it uses the
 short-horizon grid conventional for PEMS, so its evidential status differs
 from Parts~II and~III and it is kept in a separate table.
+Table~\ref{tab:published} then places \model{} against the full standard
+baseline set at the granularity the published compilation reports, spanning
+all three parts; the paragraph on cross-pipeline comparability below explains
+why that table cannot carry a superiority claim.
 
 \paragraph{Part I: traffic-flow benchmarks.}
 On the four PEMS datasets (Table~\ref{tab:pems}) \model{} is ahead of both
@@ -877,6 +934,28 @@ variate-attention baselines, whereas on high-channel data the variate mixer
 dominates the count (Table~\ref{tab:efficiency}). These results do not
 establish a ranking on Solar, Traffic, or Exchange, where comparable
 in-pipeline baselines are unavailable.
+
+\paragraph{How far the published comparison can be trusted.} Against the
+published compilation (Table~\ref{tab:published}) \model{} has the lowest
+average error on five of the seven dataset groups, is second on Traffic and
+third on Exchange. We do \emph{not} read this as evidence of superiority,
+because we can measure the confound directly: four of those baselines are
+also re-implemented here, so their published figure and their same-pipeline
+figure can be compared. On ETT and Weather the two agree closely --- DLinear
+$0.444$ vs.\ $0.442$, iTransformer $0.382$ vs.\ $0.383$ on ETT --- which is
+a useful check that our pipeline reproduces the standard protocol. On
+Electricity they do not: our iTransformer scores $0.195$ against a published
+$0.178$, and our PatchTST $0.189$ against a published $0.205$. The
+pipeline term is therefore worth up to $0.017$ MSE and runs in \emph{both}
+directions, while \model{}'s margin over published iTransformer on the same
+dataset is $0.009$. The margin is inside the confound. Table~\ref{tab:published}
+accordingly establishes that \model{} is competitive with the standard
+baseline set, and nothing stronger; the claims this paper actually defends
+rest on Table~\ref{tab:unified}, where the pipeline is held fixed. A notable
+pattern in the reproduction gap is that the linear models transfer almost
+exactly while the deep ones move most, consistent with the published deep
+baselines carrying per-dataset tuning that a single shared schedule does not
+reproduce.
 
 \subsection{Component Ablations}
 \label{sec:ablation}
