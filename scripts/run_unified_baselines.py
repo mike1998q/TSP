@@ -36,8 +36,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.train import train  # noqa: E402
 from src.utils import apply_overrides, load_config, parse_overrides  # noqa: E402
 
-DEFAULT_ARCHS = ["dual_domain", "dlinear", "nlinear", "rlinear", "patchtst",
-                 "itransformer", "smamba", "msmamba", "crossformer"]
+#: The comparison set reported in the paper's main tables, ordered as they
+#: appear there: our model, the Mamba forecasters, the attention forecasters,
+#: then the MLP/linear ones. ``nlinear`` and ``msmamba`` are extras kept from
+#: the earlier sweep and are not in the paper's baseline columns.
+DEFAULT_ARCHS = ["dual_domain", "smamba", "itransformer", "rlinear", "patchtst",
+                 "crossformer", "tide", "dlinear", "fedformer", "autoformer",
+                 "nlinear", "msmamba"]
 
 
 def mean_std(xs):

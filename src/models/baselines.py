@@ -363,6 +363,334 @@ class CrossformerBaseline(nn.Module):
         return _wrap(self.norm.denormalize(y), return_components)
 
 
+class _ResidualBlock(nn.Module):
+    """TiDE's residual block: MLP + linear skip + LayerNorm."""
+
+    def __init__(self, d_in, d_hidden, d_out, dropout):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(d_in, d_hidden), nn.ReLU(),
+            nn.Linear(d_hidden, d_out), nn.Dropout(dropout),
+        )
+        self.skip = nn.Linear(d_in, d_out)
+        self.norm = nn.LayerNorm(d_out)
+
+    def forward(self, x):
+        return self.norm(self.net(x) + self.skip(x))
+
+
+class TiDEBaseline(nn.Module):
+    """TiDE (Das et al., TMLR 2023): time-series dense encoder.
+
+    Channel-independent MLP forecaster. The normalized look-back of one
+    variate is flattened, pushed through a stack of residual blocks (the dense
+    encoder), decoded into ``pred_len`` per-step vectors, and reduced to a
+    scalar per step by the temporal decoder; a global linear map from the
+    look-back to the horizon is added as a residual, which is what keeps TiDE
+    competitive with the pure linear models.
+
+    Faithfulness note: TiDE's covariate projection is omitted because this
+    pipeline feeds no dated covariates to any model --- every baseline here
+    sees the raw look-back only. The rest (encoder/decoder depth, temporal
+    decoder, linear residual) follows the paper.
+    """
+
+    def __init__(self, seq_len, pred_len, n_channels, d_model=256,
+                 n_layers=2, decoder_dim=8, temporal_hidden=64, dropout=0.1):
+        super().__init__()
+        self.pred_len, self.decoder_dim = pred_len, decoder_dim
+        self.norm = _InstanceNorm(n_channels, affine=True)
+        enc = [_ResidualBlock(seq_len, d_model, d_model, dropout)]
+        enc += [_ResidualBlock(d_model, d_model, d_model, dropout)
+                for _ in range(n_layers - 1)]
+        self.encoder = nn.Sequential(*enc)
+        dec = [_ResidualBlock(d_model, d_model, d_model, dropout)
+               for _ in range(n_layers - 1)]
+        dec += [_ResidualBlock(d_model, d_model, pred_len * decoder_dim, dropout)]
+        self.decoder = nn.Sequential(*dec)
+        self.temporal = _ResidualBlock(decoder_dim, temporal_hidden, 1, dropout)
+        self.residual = nn.Linear(seq_len, pred_len)
+
+    def forward(self, x, stats=None, return_components=False):
+        B, L, C = x.shape
+        z = self.norm.normalize(x).permute(0, 2, 1).reshape(B * C, L)
+        h = self.decoder(self.encoder(z))                      # (B*C, H*p)
+        h = h.reshape(B * C, self.pred_len, self.decoder_dim)
+        y = self.temporal(h).squeeze(-1) + self.residual(z)    # (B*C, H)
+        y = y.reshape(B, C, self.pred_len).permute(0, 2, 1)    # (B, H, C)
+        return _wrap(self.norm.denormalize(y), return_components)
+
+
+class _AutoCorrelation(nn.Module):
+    """Autoformer's Auto-Correlation (Wu et al., NeurIPS 2021).
+
+    Replaces dot-product attention with period-based dependency discovery:
+    the cross-correlation of queries and keys is obtained through the FFT,
+    the top-$k$ lags are selected ($k=\\lfloor c\\log L\\rfloor$), and values
+    are aggregated by rolling them to those lags with softmax weights.
+    """
+
+    def __init__(self, d_model, n_heads, factor=1, dropout=0.1):
+        super().__init__()
+        self.h, self.factor = n_heads, factor
+        self.q, self.k, self.v = (nn.Linear(d_model, d_model) for _ in range(3))
+        self.out = nn.Linear(d_model, d_model)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, q, kv):
+        B, L, _ = q.shape
+        S = kv.shape[1]
+        E = self.q.out_features // self.h
+        # Autoformer truncates or zero-pads keys/values to the query length so
+        # that a single rolled aggregation covers both self- and cross-blocks.
+        Q = self.q(q).view(B, L, self.h, E)
+        K = self.k(kv).view(B, S, self.h, E)
+        V = self.v(kv).view(B, S, self.h, E)
+        if S < L:
+            pad = torch.zeros(B, L - S, self.h, E, device=q.device, dtype=q.dtype)
+            K, V = torch.cat([K, pad], 1), torch.cat([V, pad], 1)
+        else:
+            K, V = K[:, :L], V[:, :L]
+
+        qf = torch.fft.rfft(Q.permute(0, 2, 3, 1).contiguous(), dim=-1)
+        kf = torch.fft.rfft(K.permute(0, 2, 3, 1).contiguous(), dim=-1)
+        corr = torch.fft.irfft(qf * torch.conj(kf), n=L, dim=-1)   # (B, h, E, L)
+
+        top_k = max(1, int(self.factor * math.log(L)))
+        mean_corr = corr.mean(dim=(1, 2))                          # (B, L)
+        weights, delays = torch.topk(mean_corr, top_k, dim=-1)     # (B, k)
+        weights = torch.softmax(weights, dim=-1)
+
+        Vp = V.permute(0, 2, 3, 1).contiguous()                    # (B, h, E, L)
+        agg = torch.zeros_like(Vp)
+        for i in range(top_k):
+            # roll each batch element by its own delay via index gather
+            idx = (torch.arange(L, device=q.device).view(1, 1, 1, L)
+                   + delays[:, i].view(B, 1, 1, 1)) % L
+            agg = agg + Vp.gather(-1, idx.expand_as(Vp)) * \
+                weights[:, i].view(B, 1, 1, 1)
+        agg = agg.permute(0, 3, 1, 2).reshape(B, L, -1)            # (B, L, d)
+        return self.out(self.dropout(agg))
+
+
+class _FrequencyEnhancedBlock(nn.Module):
+    """FEDformer's Frequency Enhanced Block (Zhou et al., ICML 2022).
+
+    Projects the sequence to the spectrum, keeps a fixed randomly selected
+    subset of low-frequency modes, applies a learned complex linear map to
+    those modes, and transforms back. Random mode selection is what makes the
+    block linear-complexity while retaining a global view of the series.
+    """
+
+    def __init__(self, d_model, seq_len, modes=32, seed=0):
+        super().__init__()
+        self.proj = nn.Linear(d_model, d_model)
+        n_bins = seq_len // 2 + 1
+        modes = min(modes, n_bins)
+        # Fixed (buffer, not parameter) random selection, as in the paper.
+        g = torch.Generator().manual_seed(seed)
+        idx = torch.randperm(n_bins, generator=g)[:modes].sort().values
+        self.register_buffer("index", idx)
+        scale = 1.0 / (d_model * d_model)
+        self.wr = nn.Parameter(scale * torch.randn(modes, d_model, d_model))
+        self.wi = nn.Parameter(scale * torch.randn(modes, d_model, d_model))
+
+    def forward(self, x, _kv=None):                            # (B, L, d)
+        B, L, d = x.shape
+        z = torch.fft.rfft(self.proj(x), dim=1)                # (B, F, d)
+        sel = z[:, self.index, :]                              # (B, m, d)
+        real = torch.einsum("bmd,mde->bme", sel.real, self.wr) - \
+            torch.einsum("bmd,mde->bme", sel.imag, self.wi)
+        imag = torch.einsum("bmd,mde->bme", sel.real, self.wi) + \
+            torch.einsum("bmd,mde->bme", sel.imag, self.wr)
+        out = torch.zeros_like(z)
+        out[:, self.index, :] = torch.complex(real, imag)
+        return torch.fft.irfft(out, n=L, dim=1)
+
+
+class _FrequencyEnhancedAttention(nn.Module):
+    """FEDformer's Frequency Enhanced Attention: the cross block.
+
+    Queries come from the decoder and keys/values from the encoder memory.
+    Each side keeps its own randomly selected mode subset; the attention
+    matrix is formed between the selected query and key modes, applied to the
+    value modes, and the result is written back into the query spectrum. This
+    is the block that carries encoder information into the decoder --- a
+    self-block reused here would leave the encoder unconnected.
+    """
+
+    def __init__(self, d_model, q_len, kv_len, modes=32, seed=0):
+        super().__init__()
+        self.q_proj, self.k_proj, self.v_proj = (
+            nn.Linear(d_model, d_model) for _ in range(3))
+        fq, fk = q_len // 2 + 1, kv_len // 2 + 1
+        m = min(modes, fq, fk)
+        g = torch.Generator().manual_seed(seed)
+        self.register_buffer("idx_q", torch.randperm(fq, generator=g)[:m].sort().values)
+        self.register_buffer("idx_kv", torch.randperm(fk, generator=g)[:m].sort().values)
+        scale = 1.0 / (d_model * d_model)
+        self.wr = nn.Parameter(scale * torch.randn(m, d_model, d_model))
+        self.wi = nn.Parameter(scale * torch.randn(m, d_model, d_model))
+
+    def forward(self, q, kv):
+        L = q.shape[1]
+        qf = torch.fft.rfft(self.q_proj(q), dim=1)[:, self.idx_q, :]
+        kf = torch.fft.rfft(self.k_proj(kv), dim=1)[:, self.idx_kv, :]
+        vf = torch.fft.rfft(self.v_proj(kv), dim=1)[:, self.idx_kv, :]
+        # Attention over modes, weighted by the magnitude of q * conj(k).
+        qk = torch.einsum("bmd,bnd->bmn", qf, torch.conj(kf))
+        attn = torch.softmax(qk.abs(), dim=-1).to(vf.dtype)
+        z = torch.einsum("bmn,bnd->bmd", attn, vf)             # (B, m, d)
+        real = torch.einsum("bmd,mde->bme", z.real, self.wr) - \
+            torch.einsum("bmd,mde->bme", z.imag, self.wi)
+        imag = torch.einsum("bmd,mde->bme", z.real, self.wi) + \
+            torch.einsum("bmd,mde->bme", z.imag, self.wr)
+        out = torch.zeros(q.shape[0], L // 2 + 1, q.shape[2],
+                          dtype=qf.dtype, device=q.device)
+        out[:, self.idx_q, :] = torch.complex(real, imag)
+        return torch.fft.irfft(out, n=L, dim=1)
+
+
+class _DecompEncoderLayer(nn.Module):
+    """Encoder layer of the Autoformer/FEDformer skeleton: mix -> decomp ->
+    conv feed-forward -> decomp, keeping only the seasonal part."""
+
+    def __init__(self, mixer, d_model, d_ff, kernel_size, dropout):
+        super().__init__()
+        self.mixer = mixer
+        self.conv1 = nn.Conv1d(d_model, d_ff, 1, bias=False)
+        self.conv2 = nn.Conv1d(d_ff, d_model, 1, bias=False)
+        self.dec1, self.dec2 = SeriesDecomp(kernel_size), SeriesDecomp(kernel_size)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x):
+        x = x + self.dropout(self.mixer(x, x))
+        x, _ = self.dec1(x)
+        y = self.conv2(F.gelu(self.conv1(x.transpose(1, 2)))).transpose(1, 2)
+        x, _ = self.dec2(x + self.dropout(y))
+        return x
+
+
+class _DecompDecoderLayer(nn.Module):
+    """Decoder layer: self-mix, cross-mix against the encoder memory, and a
+    conv feed-forward, with the trend extracted at each decomposition and
+    accumulated through a projection (Autoformer's progressive decomposition)."""
+
+    def __init__(self, self_mixer, cross_mixer, d_model, c_out, d_ff,
+                 kernel_size, dropout):
+        super().__init__()
+        self.self_mixer, self.cross_mixer = self_mixer, cross_mixer
+        self.conv1 = nn.Conv1d(d_model, d_ff, 1, bias=False)
+        self.conv2 = nn.Conv1d(d_ff, d_model, 1, bias=False)
+        self.dec1 = SeriesDecomp(kernel_size)
+        self.dec2 = SeriesDecomp(kernel_size)
+        self.dec3 = SeriesDecomp(kernel_size)
+        self.dropout = nn.Dropout(dropout)
+        self.trend_proj = nn.Conv1d(d_model, c_out, 3, padding=1,
+                                    padding_mode="circular", bias=False)
+
+    def forward(self, x, memory):
+        x = x + self.dropout(self.self_mixer(x, x))
+        x, t1 = self.dec1(x)
+        x = x + self.dropout(self.cross_mixer(x, memory))
+        x, t2 = self.dec2(x)
+        y = self.conv2(F.gelu(self.conv1(x.transpose(1, 2)))).transpose(1, 2)
+        x, t3 = self.dec3(x + self.dropout(y))
+        trend = self.trend_proj((t1 + t2 + t3).transpose(1, 2)).transpose(1, 2)
+        return x, trend
+
+
+class _DecompTransformer(nn.Module):
+    """Shared Autoformer/FEDformer network.
+
+    Both models are the same decomposition encoder--decoder; they differ only
+    in the block that mixes tokens (Auto-Correlation vs. the Frequency
+    Enhanced Block), which is supplied by ``make_mixer``. The decoder is
+    seeded with the trend mean and the seasonal part of the look-back's second
+    half, and the forecast is the sum of the seasonal output and the
+    accumulated trend.
+    """
+
+    def __init__(self, seq_len, pred_len, n_channels, d_model, n_heads,
+                 e_layers, d_layers, d_ff, kernel_size, dropout, make_mixer):
+        super().__init__()
+        self.seq_len, self.pred_len = seq_len, pred_len
+        self.label_len = seq_len // 2
+        self.decomp = SeriesDecomp(kernel_size)
+        self.enc_embed = nn.Linear(n_channels, d_model)
+        self.dec_embed = nn.Linear(n_channels, d_model)
+        self.encoder = nn.ModuleList([
+            _DecompEncoderLayer(make_mixer(seq_len, seq_len, False), d_model,
+                                d_ff, kernel_size, dropout)
+            for _ in range(e_layers)])
+        self.enc_norm = nn.LayerNorm(d_model)
+        dec_len = self.label_len + pred_len
+        self.decoder = nn.ModuleList([
+            _DecompDecoderLayer(make_mixer(dec_len, dec_len, False),
+                                make_mixer(dec_len, seq_len, True),
+                                d_model, n_channels, d_ff, kernel_size, dropout)
+            for _ in range(d_layers)])
+        self.dec_norm = nn.LayerNorm(d_model)
+        self.projection = nn.Linear(d_model, n_channels)
+
+    def forward(self, x, stats=None, return_components=False):
+        B, L, C = x.shape
+        seasonal, trend = self.decomp(x)
+        mean = x.mean(1, keepdim=True).expand(B, self.pred_len, C)
+        trend_init = torch.cat([trend[:, -self.label_len:], mean], dim=1)
+        zeros = torch.zeros(B, self.pred_len, C, device=x.device, dtype=x.dtype)
+        seasonal_init = torch.cat([seasonal[:, -self.label_len:], zeros], dim=1)
+
+        memory = self.enc_embed(x)
+        for layer in self.encoder:
+            memory = layer(memory)
+        memory = self.enc_norm(memory)
+
+        h = self.dec_embed(seasonal_init)
+        trend_out = trend_init
+        for layer in self.decoder:
+            h, t = layer(h, memory)
+            trend_out = trend_out + t
+        y = self.projection(self.dec_norm(h)) + trend_out
+        return _wrap(y[:, -self.pred_len:], return_components)
+
+
+class AutoformerBaseline(_DecompTransformer):
+    """Autoformer (Wu et al., NeurIPS 2021): decomposition + Auto-Correlation."""
+
+    def __init__(self, seq_len, pred_len, n_channels, d_model=128, n_heads=8,
+                 e_layers=2, d_layers=1, d_ff=None, kernel_size=25,
+                 factor=1, dropout=0.1):
+        d_ff = d_ff or 2 * d_model
+        super().__init__(
+            seq_len, pred_len, n_channels, d_model, n_heads, e_layers,
+            d_layers, d_ff, kernel_size, dropout,
+            make_mixer=lambda _q, _kv, _cross: _AutoCorrelation(
+                d_model, n_heads, factor, dropout))
+
+
+class FEDformerBaseline(_DecompTransformer):
+    """FEDformer (Zhou et al., ICML 2022): decomposition + frequency-enhanced
+    blocks with random mode selection (the Fourier, not wavelet, variant)."""
+
+    def __init__(self, seq_len, pred_len, n_channels, d_model=128, n_heads=8,
+                 e_layers=2, d_layers=1, d_ff=None, kernel_size=25,
+                 modes=32, dropout=0.1):
+        d_ff = d_ff or 2 * d_model
+        self._n = 0
+
+        def make_mixer(q_len, kv_len, cross):
+            self._n += 1
+            if cross:
+                return _FrequencyEnhancedAttention(d_model, q_len, kv_len,
+                                                   modes, seed=self._n)
+            return _FrequencyEnhancedBlock(d_model, q_len, modes, seed=self._n)
+
+        super().__init__(seq_len, pred_len, n_channels, d_model, n_heads,
+                         e_layers, d_layers, d_ff, kernel_size, dropout,
+                         make_mixer=make_mixer)
+
+
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
@@ -370,7 +698,8 @@ class CrossformerBaseline(nn.Module):
 #: Baselines with faithful / repo-native implementations, keyed by ``model.arch``.
 BASELINE_ARCHS = (
     "dlinear", "nlinear", "rlinear", "patchtst", "itransformer",
-    "smamba", "msmamba", "crossformer", "tf4tf",
+    "smamba", "msmamba", "crossformer", "tide", "fedformer", "autoformer",
+    "tf4tf",
 )
 
 
@@ -426,6 +755,26 @@ def build_baseline(arch: str, cfg: dict, n_channels: int):
             n_layers=m.get("baseline_layers", 3),
             seg_len=m.get("cross_seg_len", 12),
             factor=m.get("cross_factor", 10),
+        )
+    if arch == "tide":
+        return TiDEBaseline(
+            seq_len, pred_len, n_channels,
+            d_model=m.get("tide_hidden", 256),
+            n_layers=m.get("baseline_layers", 2),
+            decoder_dim=m.get("tide_decoder_dim", 8),
+        )
+    if arch == "autoformer":
+        return AutoformerBaseline(
+            seq_len, pred_len, n_channels, d_model=dm,
+            e_layers=m.get("baseline_layers", 2),
+            kernel_size=m.get("time_kernel_size", 25),
+        )
+    if arch == "fedformer":
+        return FEDformerBaseline(
+            seq_len, pred_len, n_channels, d_model=dm,
+            e_layers=m.get("baseline_layers", 2),
+            kernel_size=m.get("time_kernel_size", 25),
+            modes=m.get("fed_modes", 32),
         )
     if arch == "tf4tf":
         spec = m.get("external_impl")

@@ -574,6 +574,13 @@ through the same data pipeline, splits, schedule, and evaluation as
 ETTm1, ETTm2, Weather, Electricity). These controls reduce split and
 evaluation confounds but do not equalize model-specific tuning budgets.
 
+Four further baselines from the standard comparison set --- Crossformer
+\cite{crossformer}, TiDE \cite{tide}, FEDformer \cite{fedformer} and
+Autoformer \cite{autoformer} --- are implemented in the same harness
+(\texttt{src/models/baselines.py}) and included in the default sweep, but
+their runs are not yet complete; they are therefore absent from
+Table~\ref{tab:unified} rather than quoted from other papers.
+
 Published results are not mixed with this ranking because their
 preprocessing, optimization, and seeds differ. Crossformer
 \cite{crossformer} is a particularly relevant spatial--temporal baseline,
@@ -723,55 +730,72 @@ Solar & MSE & $0.181$ & $0.189$ & $0.207$ & $0.206$ & 0.196 \\
 
 \begin{table*}[tb]
 \centering
-\caption{\emph{Unified in-pipeline} comparison (average MSE/MAE over
-$H\in\{96,192,336,720\}$, look-back $L{=}96$; five matched run indices;
-lower is better). Every baseline is re-implemented and evaluated with the
-same splits and protocol as \model{}; model-specific tuning budgets were not
-equalized. Following the presentation of S-Mamba \cite{smamba} and ms-Mamba
+\caption{\emph{Unified in-pipeline} comparison, \textbf{Parts II and III} of
+the main results (average MSE/MAE over $H\in\{96,192,336,720\}$, look-back
+$L{=}96$; five matched run indices; lower is better). Part~I --- the
+traffic-flow benchmarks --- is Table~\ref{tab:pems}, which is reported
+separately because its competitor figures are published rather than re-run.
+Every baseline here is re-implemented and evaluated with the same splits and
+protocol as \model{}; model-specific tuning budgets were not equalized.
+Following the presentation of S-Mamba \cite{smamba} and ms-Mamba
 \cite{msmamba}, the \best{best} result per dataset and metric is bold and the
 \second{second best} underlined. $^{*}$\,\model{} beats the best competing
 baseline at Benjamini--Hochberg $q{<}0.05$ (paired $t$-test, $n{=}5$;
 \texttt{analyze\_unified\_baselines.py}); those papers report point estimates
 without significance testing, so the starred cells are the subset of wins this
-protocol can actually support. \model{} has the lowest MSE on five of six
-datasets and the corrected test supports the margin on four; Weather is a
-statistical tie ($q{=}0.23$) and PatchTST is better on ETTm1.}
+protocol can actually support. ``---'' marks a dataset on which the baseline
+sweep has not been run; those rows give \model{}'s own result and support no
+comparison. $^{\dagger}$\,Solar uses a test-informed normalization setting
+(Section~\ref{sec:threats}) and is exploratory. \model{} has the lowest MSE on
+five of the six datasets with baselines and the corrected test supports the
+margin on four; Weather is a statistical tie ($q{=}0.23$) and PatchTST is
+better on ETTm1.}
 \label{tab:unified}
 \scriptsize
 \setlength{\tabcolsep}{2.6pt}
 \resizebox{\textwidth}{!}{%
 \begin{tabular}{@{}l cc cc cc cc cc cc cc cc@{}}
 \toprule
-Models & \multicolumn{2}{c}{\textbf{\model{}}} & \multicolumn{2}{c}{PatchTST}
- & \multicolumn{2}{c}{iTransformer} & \multicolumn{2}{c}{S-Mamba}
- & \multicolumn{2}{c}{ms-Mamba} & \multicolumn{2}{c}{RLinear}
+Models & \multicolumn{2}{c}{\textbf{\model{}}} & \multicolumn{2}{c}{S-Mamba}
+ & \multicolumn{2}{c}{ms-Mamba} & \multicolumn{2}{c}{iTransformer}
+ & \multicolumn{2}{c}{PatchTST} & \multicolumn{2}{c}{RLinear}
  & \multicolumn{2}{c}{NLinear} & \multicolumn{2}{c}{DLinear} \\
 \cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}\cmidrule(lr){8-9}
 \cmidrule(lr){10-11}\cmidrule(lr){12-13}\cmidrule(lr){14-15}\cmidrule(lr){16-17}
 Metric & MSE & MAE & MSE & MAE & MSE & MAE & MSE & MAE & MSE & MAE
  & MSE & MAE & MSE & MAE & MSE & MAE \\
 \midrule
-ETTh1 & \best{0.439}$^{*}$ & \best{0.434} & 0.456 & 0.449 & \second{0.444} & \second{0.442} & 0.463 & 0.458 & 0.459 & 0.451 & 0.457 & 0.443 & 0.464 & 0.450 & 0.462 & 0.456 \\
-ETTh2 & \best{0.376}$^{*}$ & \best{0.401} & 0.385 & 0.408 & \second{0.383} & \second{0.407} & 0.394 & 0.410 & 0.409 & 0.420 & 0.391 & 0.411 & 0.390 & 0.412 & 0.545 & 0.509 \\
-ETTm1 & \second{0.387} & \second{0.398} & \best{0.381} & \best{0.396} & 0.407 & 0.409 & 0.397 & 0.406 & 0.393 & 0.403 & 0.424 & 0.413 & 0.429 & 0.419 & 0.410 & 0.412 \\
-ETTm2 & \best{0.280}$^{*}$ & \best{0.325} & \second{0.284} & \second{0.331} & 0.292 & 0.335 & 0.297 & 0.335 & 0.288 & 0.333 & 0.293 & 0.336 & 0.294 & 0.337 & 0.359 & 0.407 \\
-Weather & \best{0.248} & \second{0.276} & \second{0.249} & \best{0.275} & 0.265 & 0.285 & 0.251 & 0.278 & 0.257 & 0.281 & 0.273 & 0.292 & 0.279 & 0.296 & 0.267 & 0.318 \\
-Electricity & \best{0.168}$^{*}$ & \best{0.263} & 0.189 & 0.276 & 0.195 & 0.282 & \second{0.183} & \second{0.275} & 0.187 & 0.277 & 0.217 & 0.295 & 0.220 & 0.299 & 0.211 & 0.299 \\
+\multicolumn{17}{@{}l}{\emph{Part II --- ETT benchmarks (7 variates).}}\\
+ETTh1 & \best{0.439}$^{*}$ & \best{0.434} & 0.463 & 0.458 & 0.459 & 0.451 & \second{0.444} & \second{0.442} & 0.456 & 0.449 & 0.457 & 0.443 & 0.464 & 0.450 & 0.462 & 0.456 \\
+ETTh2 & \best{0.376}$^{*}$ & \best{0.401} & 0.394 & 0.410 & 0.409 & 0.420 & \second{0.383} & \second{0.407} & 0.385 & 0.408 & 0.391 & 0.411 & 0.390 & 0.412 & 0.545 & 0.509 \\
+ETTm1 & \second{0.387} & \second{0.398} & 0.397 & 0.406 & 0.393 & 0.403 & 0.407 & 0.409 & \best{0.381} & \best{0.396} & 0.424 & 0.413 & 0.429 & 0.419 & 0.410 & 0.412 \\
+ETTm2 & \best{0.280}$^{*}$ & \best{0.325} & 0.297 & 0.335 & 0.288 & 0.333 & 0.292 & 0.335 & \second{0.284} & \second{0.331} & 0.293 & 0.336 & 0.294 & 0.337 & 0.359 & 0.407 \\
+\midrule
+\multicolumn{17}{@{}l}{\emph{Part III --- remaining benchmarks (8--321 variates).}}\\
+Weather & \best{0.248} & \second{0.276} & 0.251 & 0.278 & 0.257 & 0.281 & 0.265 & 0.285 & \second{0.249} & \best{0.275} & 0.273 & 0.292 & 0.279 & 0.296 & 0.267 & 0.318 \\
+Electricity & \best{0.168}$^{*}$ & \best{0.263} & \second{0.183} & \second{0.275} & 0.187 & 0.277 & 0.195 & 0.282 & 0.189 & 0.276 & 0.217 & 0.295 & 0.220 & 0.299 & 0.211 & 0.299 \\
+Exchange & 0.363 & 0.405 & --- & --- & --- & --- & --- & --- & --- & --- & --- & --- & --- & --- & --- & --- \\
+Solar$^{\dagger}$ & 0.196 & 0.259 & --- & --- & --- & --- & --- & --- & --- & --- & --- & --- & --- & --- & --- & --- \\
 \bottomrule
 \end{tabular}}
 \end{table*}
 
 \begin{table*}[tb]
 \centering
-\caption{PEMS results against the \emph{published} numbers of S-Mamba
-\cite{smamba} and ms-Mamba \cite{msmamba}, look-back $L{=}96$, horizons
-$T\in\{12,24,48,96\}$ (MSE). \best{Best} bold, \second{second best}
-underlined. \textbf{These are not same-pipeline reruns.} Unlike
-Table~\ref{tab:unified}, the competitors' figures are transcribed from their
-papers and were produced by their own code, preprocessing and seeds, so this
-table is a positioning reference rather than a controlled comparison, and no
-significance test is applicable to it. PEMS is a confirmatory family for us:
-these datasets were not used to develop any component of \model{}.}
+\caption{\textbf{Part~I of the main results: the traffic-flow benchmarks}
+(MSE, look-back $L{=}96$). The PEMS blocks use the short-horizon grid
+$T\in\{12,24,48,96\}$ standard for those datasets and compare against the
+\emph{published} numbers of S-Mamba \cite{smamba} and ms-Mamba
+\cite{msmamba}; the Traffic block uses the long-horizon grid
+$H\in\{96,192,336,720\}$ shared with Parts~II and~III
+(Table~\ref{tab:unified}), where no in-pipeline baseline sweep has been run,
+so only \model{}'s own result is available. \best{Best} bold,
+\second{second best} underlined. \textbf{These are not same-pipeline reruns.}
+Unlike Table~\ref{tab:unified}, the competitors' figures are transcribed from
+their papers and were produced by their own code, preprocessing and seeds, so
+this table is a positioning reference rather than a controlled comparison,
+and no significance test is applicable to it. PEMS is a confirmatory family
+for us: these datasets were not used to develop any component of \model{}.}
 \label{tab:pems}
 \scriptsize
 \setlength{\tabcolsep}{4pt}
@@ -798,11 +822,29 @@ Dataset & Model & $T{=}12$ & $T{=}24$ & $T{=}48$ & $T{=}96$ & Avg \\
  & \model{} & \best{0.074} & \best{0.099} & \best{0.146} & \best{0.234} & \best{0.138} \\
  & S-Mamba & \second{0.076} & 0.104 & 0.167 & 0.245 & 0.148 \\
  & ms-Mamba & \second{0.073} & \second{0.098} & \second{0.154} & \second{0.236} & \second{0.140} \\
+\midrule
+\multicolumn{7}{@{}l}{\emph{Traffic (862 variates), long-horizon grid:}}\\
+& & $H{=}96$ & $H{=}192$ & $H{=}336$ & $H{=}720$ & Avg \\
+\multirow{3}{*}{Traffic}
+ & \model{} & 0.401 & 0.423 & 0.441 & 0.481 & 0.437 \\
+ & S-Mamba & --- & --- & --- & --- & --- \\
+ & ms-Mamba & --- & --- & --- & --- & --- \\
 \bottomrule
 \end{tabular}
 \end{table*}
 
 \FloatBarrier
+We report the main comparison in three parts, grouped by the kind of data
+each covers: \textbf{Part~I}, the traffic-flow benchmarks Traffic and the
+four PEMS sets (Table~\ref{tab:pems}); \textbf{Part~II}, the four ETT
+benchmarks; and \textbf{Part~III}, the remaining datasets --- Weather,
+Electricity, Exchange and Solar (both in Table~\ref{tab:unified}). The split
+is not only presentational: Part~I is the only group whose competitor numbers
+are \emph{published} rather than re-run in our pipeline, and it uses the
+short-horizon grid conventional for PEMS, so its evidential status differs
+from Parts~II and~III and it is kept in a separate table.
+
+\paragraph{Part I: traffic-flow benchmarks.}
 On the four PEMS datasets (Table~\ref{tab:pems}) \model{} is ahead of both
 published Mamba forecasters on PEMS03 ($0.116$ vs.\ $0.122$/$0.122$) and
 PEMS08 ($0.138$ vs.\ $0.148$/$0.140$), and behind both on PEMS04 and PEMS07,
@@ -810,9 +852,12 @@ where ms-Mamba's multi-scale sampling rates are strongest. Because the
 competing figures come from their own pipelines, we read this as
 \emph{positioning} rather than as evidence of superiority: the split is two
 datasets each way, and the protocol difference is large enough that a
-$0.005$-scale margin should not be over-interpreted.
+$0.005$-scale margin should not be over-interpreted. Traffic carries no
+in-pipeline baseline sweep, so its row records \model{}'s own accuracy
+($0.437$ average MSE) and supports no comparison.
 
 \FloatBarrier
+\paragraph{Parts II and III: ETT and the remaining benchmarks.}
 Table~\ref{tab:unified} is the paper's primary accuracy evidence because it
 uses one data and evaluation protocol. Under this five-run protocol \model{} has the
 lowest average MSE on five of the six re-run datasets, and the paired,
