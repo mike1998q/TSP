@@ -39,3 +39,7 @@ paper/**/*.log
 paper/**/*.spl
 paper/**/*.out
 paper/**/*.toc
+
+# Stray LaTeX artifacts from a run outside paper/ (e.g. wrong cwd)
+texput.log
+*.synctex.gz
