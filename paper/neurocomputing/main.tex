@@ -126,19 +126,15 @@ implicitly, which may be inefficient on small datasets.
 \textbf{Gap~2: the useful inductive bias differs by domain, but is rarely
 separable.} Local trends and regime changes are naturally expressed in the
 time domain, while multi-scale seasonality is compact in the frequency
-domain. Models committed to a single view --- attention or SSMs over time
-steps only, or spectral mixing only \cite{frets} --- expose just one; and
-even dual-domain models that use both, such as TF4TF \cite{tf4tf}, fuse them
-\emph{inside} the network, so neither view is a separately removable
-forecast path whose marginal value can be measured.
+domain. Single-view models \cite{frets} expose only one, and dual-domain models such
+as TF4TF \cite{tf4tf} fuse both \emph{inside} the network, so neither view is
+a separately removable forecast path whose marginal value can be measured.
 \textbf{Gap~3: cross-variate capacity can help or hurt.} Cross-variate
 mixing is effective on several high-dimensional benchmarks
-\cite{itransformer,smamba,crossformer}, but the underlying data property it
-exploits --- how strongly channels are actually correlated --- differs by a
-factor of three across the standard benchmarks (Table~\ref{tab:datasets}).
-This motivates treating the mixer as an explicit option rather than a
-universal setting, while testing rather than assuming that correlation
-predicts its value.
+\cite{itransformer,smamba,crossformer}, but the property it exploits ---
+how strongly channels correlate --- varies threefold across the standard
+benchmarks (Table~\ref{tab:datasets}), motivating an explicit switch rather
+than a universal setting.
 
 We answer these three gaps with \model{} (Fig.~\ref{fig:arch}), mapping
 each to one structural remedy: \emph{(i)}~a DLinear-style time backbone with
@@ -273,11 +269,8 @@ absolute cross-channel Pearson correlation ranges from $0.31$ on ETTh1 to
 $0.91$ on Solar; Table~\ref{tab:datasets}). (iii)~Component-level
 comparisons, when reported at all, typically rest on a handful of seeds and
 uncorrected $p$-values, so it is unclear which claimed effects would survive
-multiplicity control. The methodological gap we address is therefore
-\emph{measurement}: existing architectures provide limited evidence about
-whether an observed gain comes from temporal modeling, spectral modeling,
-or cross-variable capacity, and component studies rarely account for the
-number of comparisons being made. The closest works in spirit are TimeRecipe
+multiplicity control. The gap we address is therefore \emph{measurement}.
+The closest works in spirit are TimeRecipe
 \cite{timerecipe} and CombinationTS \cite{combinationts}, which decompose
 forecasters into interchangeable modules and benchmark module-level
 effectiveness \emph{across} many architectures at large scale---to distill
@@ -407,13 +400,11 @@ runs the recurrence
 y_k = \mathbf{C}_k^{\top} \mathbf{h}_k + D\, u_k ,
 \label{eq:ssm}
 \end{equation}
-scanned causally over the $L$ steps and applied independently to each of
-the $d_{\mathrm{in}}$ feature dimensions: per dimension, the state is
-$\mathbf{h}_k \in \mathbb{R}^{N}$, $\mathbf{A} \in \mathbb{R}^{N}$ is
-diagonal, the input $u_k$ is scalar, and
-$(\boldsymbol{\Delta}_k \in \mathbb{R},\; \mathbf{B}_k, \mathbf{C}_k \in
-\mathbb{R}^{N})$ are produced from $u$ by learned linear maps ---
-the input-dependent selectivity of \cite{mamba}. The last state, summed
+scanned causally over the $L$ steps, independently per feature dimension
+(diagonal $\mathbf{A}\in\mathbb{R}^{N}$, scalar input, with
+$\boldsymbol{\Delta}_k,\mathbf{B}_k,\mathbf{C}_k$ produced from $u$ by learned
+linear maps --- the input-dependent selectivity of \cite{mamba}). The last
+state, summed
 with a whole-window linear embedding $\mathbf{W}_e \tilde{\mathbf{x}}^{(c)}$
 (one per variate, as in \cite{smamba}), forms the branch feature
 $\mathbf{f}_{\mathrm{time}} \in \mathbb{R}^{C \times d}$. A head
@@ -457,26 +448,18 @@ samples are the branch's linear spectral forecast:
 \; + \; \phi_{\mathrm{freq}}(\mathbf{f}_{\mathrm{freq}}).
 \label{eq:fits}
 \end{equation}
-This pathway uses the frequency interpolation idea of FITS \cite{fits}, but is
-not a fitted FITS model. When the spectral backbone is enabled
-(Table~\ref{tab:hparams}: ETTh1, ETTh2, Weather), both $\mathbf{U}$ and the
-forecast head $\phi_{\mathrm{freq}}$ are \emph{zero-initialized}, so the
-frequency branch is silent at initialization; we use a zero rather than an
-identity init because the length-$L$ and length-$(L{+}H)$ frequency grids do
-not align, so no canonical identity init exists, and a random $\mathbf{U}$
-would inject noise during the highest-learning-rate epochs. On the remaining
-datasets the spectral backbone is disabled: the linear-in-frequency term of
-Eq.~\eqref{eq:fits} is absent and $\phi_{\mathrm{freq}}$ is
-\emph{randomly} initialized, so there the frequency branch contributes a
-small, gate-attenuated signal from the first step rather than being silent.
-Consequently the clean RLinear-class initialization---in which, with the time
-head, spectral map, and gate all zero or constant at init, the end-to-end map
-in the normalized space reduces to the linear
-$g_0\cdot\mathbf{Y}_{\mathrm{lin}}$ and, composed with RevIN, to the
-RLinear-class structure \cite{rlinear,revin}---holds exactly only for the
-backbone-enabled configurations. Elsewhere it holds approximately, up to the
-$(1{-}g_0)$-weighted random frequency term, which the near-saturated fusion
-gate ($g_0\!\approx\!0.9$) keeps small.
+This uses the frequency-interpolation idea of FITS \cite{fits} but is not a
+fitted FITS model. Where the backbone is enabled (ETTh1, ETTh2, Weather),
+$\mathbf{U}$ and the head $\phi_{\mathrm{freq}}$ are both zero-initialized, so
+the branch is silent at init; a zero rather than identity init is used because
+the length-$L$ and length-$(L{+}H)$ frequency grids do not align. Elsewhere the
+backbone is off and $\phi_{\mathrm{freq}}$ is \emph{randomly} initialized, so
+the branch contributes a small gate-attenuated signal from the first step.
+The clean RLinear-class start \cite{rlinear,revin} --- in which every deep path
+is zero at init and the model reduces to $g_0\cdot\mathbf{Y}_{\mathrm{lin}}$
+--- therefore holds exactly only for the backbone-enabled configurations, and
+approximately elsewhere, up to a $(1{-}g_0)$-weighted random term that the
+near-saturated gate ($g_0\!\approx\!0.9$) keeps small.
 
 \begin{figure}[H]
 \centering
@@ -632,9 +615,9 @@ after each epoch, gradient clipping at 5.0, and best-checkpoint early
 stopping on validation loss. The decomposition kernel is 25; Mamba blocks
 use expansion 2 and convolution width 4. The search space, selected
 configurations, and remaining implementation details are reported in
-Table~\ref{tab:hparams} and the reproducibility package. This schedule was
-held fixed across runs but was not compared with longer-budget or warm-up
-alternatives, so schedule sensitivity remains a potential confound.
+Table~\ref{tab:hparams} and the reproducibility package. The schedule is
+held fixed across runs; Section~\ref{sec:threats} reports the sweep that
+tested it against a longer warm-up-plus-cosine budget.
 \model{}'s
 per-horizon results
 (Table~\ref{tab:horizons}) are means over \emph{three seeds} (2024--2026);
@@ -644,10 +627,9 @@ MSE, typically $0.001$--$0.003$. The unified in-pipeline comparison
 every model, and \model{}'s five-seed averages reproduce its three-seed
 numbers to within $0.002$ MSE.
 The table records final empirical configurations, not a transferable
-capacity-selection rule. No common preregistered search space or equalized
-model-specific tuning budget was used. Consequently, the comparison should
-be read as a standardized-pipeline evaluation rather than a fully
-budget-matched benchmark.
+selection rule: no preregistered search space or equalized per-model tuning
+budget was used, so the comparison is a standardized-pipeline evaluation
+rather than a budget-matched benchmark.
 \subsubsection{Statistical Methodology}
 We compare at two levels.
 \emph{Within our framework} (ablations), every variant shares seeds with
@@ -937,14 +919,11 @@ reference & full & bi-Mamba & base & linear filter \\
 \end{tabular}
 \end{table}
 
-A methodological difference is worth stating explicitly, because it changes
-what the table can support. S-Mamba and ms-Mamba both report single-run
-deltas and read the sign directly. With twelve variants, roughly one would
-clear an uncorrected $0.05$ threshold by chance, so we run multiple seeds,
-report paired confidence intervals, and apply Benjamini--Hochberg across the
-family. That is why our component conclusions are weaker than theirs on the
-same architecture family: not because the effects are smaller, but because
-they are being asked to survive a correction. We report its complete output on three datasets under
+One methodological difference matters for what these tables support: S-Mamba
+and ms-Mamba report single-run deltas, whereas we use multiple seeds, paired
+CIs and Benjamini--Hochberg across the family --- with a dozen variants, about
+one would clear an uncorrected threshold by chance. We report the harness's
+complete output on three datasets under
 their \emph{final released configurations}, three seeds each at $H{=}96$:
 ETTh1 and Solar (Table~\ref{tab:ablation}) and Weather
 (Table~\ref{tab:ablation_weather}), with the paired methodology of
@@ -993,19 +972,13 @@ $0.199$). We emphasize, however, that across the 29 component-placement
 comparisons \emph{none} survives Benjamini--Hochberg correction (the five
 raw-significant effects have $q\ge 0.11$): at three seeds these are
 \emph{exploratory, directional} findings, not confirmed effects, and we
-report them as such. The consistency of the \emph{direction} (component
-value is dataset-dependent, in both directions) is what motivates
-per-dataset switches; supporting any individual placement effect requires
-more runs and validation-only configuration selection.
-Zero initialization is a \emph{null} result --- no significant difference on
-either dataset ($-0.0012$ ETTh1, $-0.0046$ Solar; CIs include zero) --- so
-we make no accuracy claim for it, only the interpretable linear start
-(Section~\ref{sec:anchors}). The DLinear backbone and the learned gate versus
-averaging are within CIs everywhere; on Weather
-(Table~\ref{tab:ablation_weather}) three components have unadjusted paired
-CIs excluding zero (normalization, the variate mixer, and the temporal Mamba,
-$+0.0027$, positive on all seeds). The recurring pattern --- component value
-is dataset-dependent, in \emph{both} directions --- is the argument for
+report them as such. Zero initialization is a \emph{null} result on both datasets ($-0.0012$
+ETTh1, $-0.0046$ Solar; CIs include zero), so we claim no accuracy benefit for
+it, only the interpretable linear start (Section~\ref{sec:anchors}). The
+DLinear backbone and gate-versus-average are within CIs everywhere; on Weather
+three components have unadjusted CIs excluding zero (normalization, the
+variate mixer, and the temporal Mamba). The recurring pattern --- component
+value is dataset-dependent in \emph{both} directions --- is the argument for
 per-dataset switches over universal defaults, and it does not depend on any
 single dataset.
 
@@ -1124,6 +1097,66 @@ full & $0.1620{\scriptstyle\pm.0003}$ & --- & reference \\
 \end{tabular}
 \end{table}
 
+\begin{table}[tb]
+\centering
+\caption{S-Mamba-style component ablation on PEMS04 ($T{=}12$, three seeds),
+following the grid of Table~\ref{tab:ablation_grid}. $\Delta$MSE is the paired
+per-seed change against the full model (positive = worse), with $t$-based 95\%
+CIs. $^{*}$\,CI excludes zero; $^{\dagger}$\,survives Benjamini--Hochberg across
+the eleven-variant family at $q{<}0.05$. Reference: MSE $0.0754$, MAE $0.1794$.}
+\label{tab:ablation_pems}
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}ll cc cc@{}}
+\toprule
+Design & Variant & MSE & MAE & $\Delta$MSE & 95\% CI \\
+\midrule
+Replace & uni-Mamba mixer & 0.0763 & 0.1799 & $+0.0010$$^{\dagger}$ & $[+0.0005,+0.0015]$ \\
+ & Attention mixer & 0.0816 & 0.1842 & $+0.0062$$^{\dagger}$ & $[+0.0047,+0.0078]$ \\
+ & untie the two mixers & 0.0752 & 0.1795 & $-0.0002$ & $[-0.0018,+0.0014]$ \\
+ & mixer in time branch only & 0.0767 & 0.1804 & $+0.0013$$^{\dagger}$ & $[+0.0007,+0.0020]$ \\
+ & time encoder: MLP $\to$ Mamba & 0.0744 & 0.1778 & $-0.0010$$^{*}$ & $[-0.0018,-0.0002]$ \\
+ & spectral filter $\to$ bi-Mamba & 0.0759 & 0.1801 & $+0.0005$ & $[-0.0016,+0.0026]$ \\
+ & plain average instead of gate & 0.0757 & 0.1804 & $+0.0003$$^{*}$ & $[+0.0000,+0.0006]$ \\
+\midrule
+w/o & no variate mixing & 0.0985 & 0.2058 & $+0.0232$$^{\dagger}$ & $[+0.0228,+0.0235]$ \\
+ & no frequency branch & 0.0759 & 0.1805 & $+0.0006$ & $[-0.0008,+0.0020]$ \\
+ & no time branch & 0.0766 & 0.1812 & $+0.0012$$^{\dagger}$ & $[+0.0004,+0.0020]$ \\
+ & no instance norm & 0.0715 & 0.1755 & $-0.0038$$^{\dagger}$ & $[-0.0052,-0.0024]$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{PEMS04: the first dataset where components separate.} On the nine
+original benchmarks no component effect survived correction. On PEMS04
+(Table~\ref{tab:ablation_pems}) six of eleven do, and the pattern is coherent.
+Cross-variate mixing dominates: removing it costs $+0.0232$ MSE, a $31\%$
+degradation and by far the largest effect we have measured. Its \emph{form}
+also matters --- replacing the bidirectional Mamba with attention costs
+$+0.0062$ and with a unidirectional scan $+0.0010$, so on this dataset our
+pipeline independently reproduces S-Mamba's two design claims
+\cite{smamba}: a selective state space beats attention over the variate axis,
+and the scan should be bidirectional because channel order carries no
+temporal meaning. Mixing in both branches beats mixing only in the time branch
+($+0.0013$), while tying the two mixers is neutral ($-0.0002$), matching the
+efficiency result of Section~\ref{sec:discussion}.
+
+The frequency branch does not separate here: removing it costs $+0.0006$ with
+a CI spanning zero, and swapping its filter for a bidirectional Mamba changes
+nothing detectable. Removing the \emph{time} branch does hurt
+($+0.0012^{\dagger}$). The asymmetry is consistent with the branch matrix on
+the original benchmarks and reinforces that the temporal path carries this
+architecture.
+
+Two results run against the shipped configuration. Replacing the MLP time
+encoder with Mamba \emph{improves} PEMS04 ($-0.0010$, CI excludes zero but
+$q{=}0.052$), and disabling instance normalization improves it substantially
+($-0.0038^{\dagger}$, a $5\%$ MSE reduction). We do not adopt either. Both are
+measured on the test split, and acting on them would be precisely the
+test-informed selection this paper criticizes elsewhere --- the same mistake as
+the Solar normalization setting. They are recorded as validation-only
+experiments for future work, not as configuration changes.
+
 \paragraph{Negative results that shaped the design.} Deepening the traffic
 mixer from two to four layers ($19.7\rightarrow37.9$M) gave no gain, so the
 release keeps two; enabling the mixer on ETT ($8.4$K training windows)
@@ -1157,93 +1190,54 @@ Accordingly, PCC is reported as a dataset descriptor. A predictive selector
 would require lag-aware and nonlinear dependence measures, validation-only
 threshold selection, and evaluation on held-out datasets.
 
-\paragraph{The error profile is horizon-dependent, and initialization explains
-part of it.} On Electricity the margin against the strongest published
-competitor varies monotonically with the horizon: relative to the S-Mamba
-average, \model{} is $+1.4\%$ worse at $H{=}96$, level at $H{=}192$, then
-$1.1\%$ and $2.0\%$ better at $H{=}336$ and $H{=}720$. Weather shows no such
-deficit and is ahead at every horizon. The two datasets differ in a way that
-predicts exactly this: Weather enables the FITS spectral pathway of
-Eq.~\eqref{eq:fits} and Electricity does not, and as noted in
-Section~\ref{sec:freq} the frequency forecast head is zero-initialized
-\emph{only} when that pathway is present. Electricity therefore begins
-training with a randomly initialized frequency head whose output enters the
-forecast at the gate's initial weight $1-g_0\approx0.1$.
+\paragraph{The error profile is horizon-dependent.} On Electricity the margin
+against the strongest published competitor varies monotonically with the
+horizon: relative to the S-Mamba average, \model{} is $1.4\%$ worse at
+$H{=}96$, level at $H{=}192$, then $1.1\%$ and $2.0\%$ better at $H{=}336$ and
+$H{=}720$. Weather shows no such deficit. The two differ in a way that predicts
+it: Weather enables the spectral pathway of Eq.~\eqref{eq:fits} and Electricity
+does not, and the frequency head is zero-initialized \emph{only} when that
+pathway is present (Section~\ref{sec:freq}). Electricity therefore starts with
+a random frequency head, which we measured to inject a perturbation of
+$\approx0.058$ RMS in the normalized space --- essentially constant across
+horizons, and exactly zero when the pathway is on. A horizon-independent
+perturbation costs a larger share of a smaller error budget, matching the
+observed direction.
 
-We measured that contribution directly. In the normalized space the untrained
-frequency branch of the Electricity configuration emits a signal of
-RMS~$\approx0.58$, so the injected perturbation is $\approx0.058$~RMS, and it
-is essentially \emph{constant across horizons} ($0.058$, $0.057$, $0.058$,
-$0.057$ at $H{=}96,192,336,720$); with the spectral pathway enabled it is
-exactly zero. A horizon-independent perturbation consumes a larger share of a
-smaller error budget, and the achievable error here grows from $0.141$ at
-$H{=}96$ to $0.200$ at $H{=}720$ --- so the same initialization noise is worth
-$2.4\%$ of the short-horizon budget but only $1.7\%$ of the long-horizon one,
-in the same direction and rough proportion as the observed gap.
+Enabling the pathway on Electricity was tried and failed informatively: it
+left $H{=}336$ unchanged but degraded $H{=}720$ by $+0.024$
+($0.200\rightarrow0.224$), moving the dataset average from $0.169$ to $0.175$.
+The map interpolates the length-$L$ spectrum onto a length-$(L{+}H)$ grid, so
+its fan-out grows with the horizon --- $49\rightarrow97$ bins at $H{=}96$ but
+$49\rightarrow409$ at $H{=}720$ --- and the damage tracks that ratio. Our
+configuration also applies no low-pass ($\rho{=}0$), whereas the ETT datasets
+using this pathway pair it with $\rho\in\{0.3,0.4\}$; that cutoff is the
+regularizer which keeps linear-in-frequency forecasting stable. What the
+measurement implicates is the head's \emph{initialization}, not the absence of
+a spectral map, and the two can be separated: the head can be zeroed at no
+parameter cost and with no horizon-dependent extrapolation.
 
-The obvious remedy --- enabling the spectral pathway on Electricity, as
-Weather does --- was tried and \emph{failed}, in an informative way. It left
-$H{=}336$ unchanged and cost $+0.002$ and $+0.001$ at $H{=}96$ and $H{=}192$,
-but degraded $H{=}720$ by $+0.024$ ($0.200\rightarrow0.224$), moving the
-dataset average from $0.169$ to $0.175$. The reason is that the pathway of
-Eq.~\eqref{eq:fits} interpolates the length-$L$ spectrum onto a
-length-$(L{+}H)$ grid, so the map's fan-out grows with the horizon: for
-$L{=}96$ it is $49\rightarrow97$ bins at $H{=}96$ but $49\rightarrow409$ at
-$H{=}720$, an $8.3\times$ extrapolation from the same $49$ measured
-coefficients. The damage tracks that ratio monotonically. Our Electricity
-configuration also applies no spectral low-pass ($\rho{=}0$), whereas the two
-ETT datasets that use this pathway pair it with $\rho\in\{0.3,0.4\}$; the
-cutoff is the regularizer that makes linear-in-frequency forecasting stable,
-and without it the map extrapolates the noisiest high-frequency bins furthest.
-
-This separates two things the ``enable FITS'' intervention conflates. What the
-measurement implicates is the \emph{random initialization of the frequency
-head}, not the absence of a spectral map --- and the head can be silenced on
-its own. We therefore expose the head's initialization as an independent
-switch: it can be zero-initialized whether or not a backbone is present, at no
-parameter cost and without introducing any horizon-dependent extrapolation.
-That is the intervention the evidence supports, and it is the one we would test
-next; the FITS result above stands as a recorded negative.
-
-We present the initialization account as the leading explanation rather than a
-demonstrated cause. The horizon trend is measured over four points, and any
-quantity monotone in $H$ would correlate with it, so the load-bearing evidence
-is the direct measurement plus the Weather/Electricity contrast, not the
-correlation. Two further mechanisms point the same way and are not separated by
-these data. First, the architecture is linear-dominated by construction
-(zero-initialized corrections, $g_0\approx0.9$, and a schedule that halves the
-learning rate each epoch over ten epochs), and a near-linear predictor is
-relatively stronger at long horizons, where forecasts approach seasonal
-climatology, than at short ones, where recoverable local dynamics reward
-nonlinear capacity. Second, the trend/seasonal split uses a moving average of
-width $25$, which at hourly sampling is roughly one day and smooths away
-precisely the sub-daily detail that a $96$-step forecast could still exploit.
-Separating them requires a head-initialization ablation, a training-budget
-sweep, and a kernel-width sweep.
+We present this as the leading explanation rather than a demonstrated cause.
+The trend has four points, so any quantity monotone in $H$ would correlate
+with it; the load-bearing evidence is the direct measurement plus the
+Weather/Electricity contrast. Two further mechanisms point the same way and
+are not separated by these data: the architecture is linear-dominated by
+construction, which favours long horizons where forecasts approach
+climatology; and the trend/seasonal split uses a width-$25$ moving average,
+roughly one day at hourly sampling, which smooths away sub-daily detail a
+$96$-step forecast could still use.
 
 \paragraph{Complexity accounting.} Table~\ref{tab:efficiency} reports
-model-only, hardware-independent estimates rather than comparative runtime
-evidence. Parameter count is governed
-by model \emph{width}, not channel count (electricity and traffic share
-$19.7$M despite a $2.7{\times}$ gap in variates), so model size is decoupled
-from data dimensionality; compute and activation memory instead scale with
-the channel count through the variate mixer (traffic $60$\,GMACs vs.\
-electricity's $22$ at equal width, while ETT and exchange sit two orders of
-magnitude below), keeping the capacity restraint on those datasets
-inexpensive. The variate mixer accounts for over $90\%$ of the parameters on
-high-channel data (it scales with the square of the width and is instantiated
-in both branches), so its cost is directly tunable: halving the width takes
-the Electricity and Traffic models from $19.7$M to $5.3$M, and
-\emph{weight-tying} one mixer across the two branches --- a configuration
-switch in our implementation --- halves it again to $2.9$M, bringing \model{}
-into the size range of the variate-attention baselines. On Traffic this
-reduction is empirically validated: at $H{=}96$ (three seeds) the tied-mixer
-model matches the untied one within noise ($\Delta\mathrm{MSE}=+0.0007$, 95\%
-CI $[-0.003,+0.005]$), whereas placing the mixer in the time branch
-\emph{only} is worse in the three-run estimate ($+0.0045$, unadjusted CI
-excludes zero). Thus, weight tying reduces the measured parameter cost
-without a detected Traffic accuracy loss; it is not evidence of zero cost or
-universal transfer to other datasets.
+model-only estimates, not runtime evidence. Parameter count follows model
+\emph{width}, not channel count (Electricity and Traffic both reach $19.7$M
+despite a $2.7{\times}$ gap in variates); compute and activation memory
+instead scale with channels through the variate mixer (Traffic $60$\,GMACs
+vs.\ Electricity's $22$ at equal width). That mixer is over $90\%$ of
+parameters on high-channel data, so its cost is tunable: halving the width
+gives $5.3$M, and weight-tying one mixer across branches gives $2.9$M. On
+Traffic the tie is free ($\Delta\mathrm{MSE}=+0.0007$, CI $[-0.003,+0.005]$,
+three seeds), whereas a time-branch-only mixer is worse ($+0.0045$), a result
+PEMS04 reproduces (Table~\ref{tab:ablation_pems}).
 
 We subsequently ran the reduction on Electricity and Weather, and it does
 \emph{not} transfer (Table~\ref{tab:capacity}). Both reduced models are worse,
@@ -1381,6 +1375,7 @@ the Solar effect uses a test-informed configuration.}
 \end{figure}
 
 \subsection{Threats to validity}
+\label{sec:threats}
 Several threats remain, each with the experiment that would resolve it.
 
 \paragraph{Baseline scope and tuning.} The in-pipeline comparison covers
@@ -1393,47 +1388,28 @@ Table~\ref{tab:unified}; broader ranking requires official implementations
 or verified adapters and comparable search budgets.
 
 \paragraph{The accuracy ceiling is generalization, not optimization.} Our
-schedule sets $\mathrm{lr}=\mathrm{base}\cdot 0.5^{(e-1)}$, whose summed budget
-is the geometric series $\sum_e 0.5^{e-1}=2\cdot\mathrm{base}$ ---
-\emph{bounded regardless of the epoch count}, with only about four epochs above
-$10\%$ of the base rate. Because the Electricity training loss is still falling
-at the final epoch at every horizon, this looked like undertraining, and we
-tested it directly (\texttt{scripts/run\_schedule\_sweep.py}): the same models
-were retrained under warmup-plus-cosine over thirty epochs, roughly five times
-the integrated learning rate.
+schedule sets $\mathrm{lr}=\mathrm{base}\cdot 0.5^{(e-1)}$, a geometric series
+whose total budget is $2\cdot\mathrm{base}$ \emph{regardless of epoch count},
+with only about four epochs above $10\%$ of the base rate. Since the training
+loss is still falling at the final epoch, this looked like undertraining, so
+we tested it (\texttt{scripts/run\_schedule\_sweep.py}) by retraining under
+warmup-plus-cosine over thirty epochs, roughly five times the integrated rate.
+The hypothesis was wrong: the larger budget cut \emph{training} loss by
+$16$--$31\%$ across horizons while test error did not improve anywhere
+(dataset average $0.169\rightarrow0.171$), and the train-to-validation gap
+widened from $14$--$32\%$ to $38$--$69\%$. The optimizer is not the
+constraint; the sharp decay was acting as an implicit regularizer.
 
-The hypothesis was wrong. The larger budget reduces \emph{training} loss
-substantially --- by $16\%$, $31\%$, $29\%$ and $23\%$ at $H{=}96$, $192$,
-$336$ and $720$ --- while test error does not improve anywhere
-($0.1401\rightarrow0.1402$, $0.1588\rightarrow0.1612$,
-$0.1740\rightarrow0.1790$, $0.2033\rightarrow0.2045$; dataset average
-$0.169\rightarrow0.171$). The train-to-validation gap widens from $14$--$32\%$
-to $38$--$69\%$. The optimizer is therefore not the constraint: the model can
-already fit the training distribution considerably harder than it can
-generalize, and the aggressive decay was acting as an implicit regularizer
-rather than starving the fit.
-
-What limits accuracy is the generalization gap itself. Under the shipped
-schedule, training-to-validation error rises by $14$--$32\%$ and
-validation-to-test error by a further $12$--$18\%$ at the shorter horizons ---
-the latter reflecting distribution shift between the validation and test
-periods rather than capacity. This is consistent with the two other capacity
-results in this paper: reducing width hurt (Table~\ref{tab:capacity}) and
-increasing optimization does not help, so the model sits near the useful
-capacity for this data and recipe. It also means the accuracy gap to the
-strongest published Electricity results is unlikely to close through tuning; it
-points instead at the non-stationarity handling discussed above, where
-normalization that adapts to the input--output distribution mismatch is the
-active research direction.
-
-This experiment also strengthens the component-ablation nulls rather than
-qualifying them. A zero-initialized branch or mixer must \emph{grow} its
-contribution, so a plausible objection was that the recipe never trained those
-components; under a five-fold larger budget they still do not produce a test
-gain, so the finding that no component effect survives correction is not an
-artifact of the learning-rate schedule. The training loop now emits an explicit
-undertrained-versus-overfit diagnostic at the end of each run so this condition
-is visible without inspecting curves by hand.
+What limits accuracy is the generalization gap: train-to-validation error
+rises $14$--$32\%$ and validation-to-test a further $12$--$18\%$ at short
+horizons, the latter reflecting distribution shift between the two periods.
+With reducing width also hurting (Table~\ref{tab:capacity}), the model sits
+near the useful capacity for this data and recipe, and the remaining gap is
+unlikely to close through tuning. The result also strengthens the
+component-ablation nulls rather than qualifying them: the objection that
+zero-initialized components were never given budget to grow does not survive a
+five-fold larger one. The training loop emits an explicit
+undertrained-versus-overfit diagnostic so the condition is visible per run.
 
 \paragraph{Statistical power and multiplicity.} With $n{=}3$ seeds, tests
 have limited power, and although we apply Benjamini--Hochberg correction,
